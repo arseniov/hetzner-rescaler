@@ -119,18 +119,48 @@ Usage:
   hetzner-rescaler [command]
 
 Available Commands:
-  config      Create the configuration file
+  config      Interactively add or edit projects, servers, modes, and windows (stored in SQLite)
   help        Help about any command
-  plug        Configure and start immediately
-  start       Start rescale timers
-  try         Try a complete rescale cycle
+  migrate     Import a legacy YAML config into the SQLite database
+  serve       Run the HTTP API server (phase 2 — currently a stub)
+  start       Start the scheduler loop (reads from SQLite)
+  status      Print all configured projects, servers, and recent events
+  try         One-shot rescale: `hetzner-rescaler try <server-id> <up|down>`
 
 Flags:
-      --config string   config file (default is $HOME/.hetzner-rescaler.yaml)
-  -h, --help            help for hetzner-rescaler
+  -h, --help   help for hetzner-rescaler
 
 Use "hetzner-rescaler [command] --help" for more information about a command.
 ```
+
+## Backup
+
+The SQLite database and the token-encryption key must be backed up together:
+
+- DB: `~/.hetzner-rescaler/db.sqlite` (or wherever `RESCALER_DB_PATH` points, default `/data/db.sqlite` in Docker)
+- Key: `~/.hetzner-rescaler/key` (or `/data/key` in Docker)
+
+If you back up the DB without the key, your Hetzner tokens are unrecoverable.
+
+## Docker
+
+A pre-built image is published as `jonamat/hetzner-rescaler:latest` (multi-arch: amd64, arm64, armv7).
+
+```sh
+cp .env.example .env                       # edit values
+cp docker-compose.example.yml docker-compose.yml
+docker compose up -d
+docker compose exec rescaler hetzner-rescaler config   # one-time interactive setup
+docker compose logs -f rescaler
+```
+
+The container stores its SQLite DB and encryption key under `/data`, backed by a named volume (`rescaler_data`). Override behavior via `.env`:
+
+- `RESCALER_DB_PATH` — defaults to `/data/db.sqlite`
+- `RESCALER_TOKEN_ENCRYPTION_KEY` — hex-encoded 32-byte key; auto-generated on first run if unset (and written to `/data/key`)
+- `RESCALER_HTTP_ADDR` — loopback HTTP address (only relevant once phase 2's `serve` command is in use)
+
+The web UI (phase 2) and the Authorizer sibling container are not yet wired in this image.
 
 ## Use cases
 This tool was developed for a my specific use case: I use an Hetzner server for remote development, using the [Remote SSH extension](https://code.visualstudio.com/docs/remote/ssh) to simplify my cross-device development workflow. This machine also serve some personal services, which require very little resources but cannot be stopped for a long time.<br>
