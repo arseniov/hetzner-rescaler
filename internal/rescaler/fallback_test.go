@@ -45,7 +45,9 @@ func TestFallbackFailsWhenAllUnavailable(t *testing.T) {
 	api.MarkUnavailable("cpx31")
 	api.MarkUnavailable("cpx21")
 	api.MarkUnavailable("cpx11")
-	srv := &hetzner.Server{ID: 1, Name: "web", ServerType: &hetzner.ServerType{Name: "cpx11"}}
+	// Server's current type is "cx11" — outside the chain — so the chain is
+	// actually walked and Rescale's no-op short-circuit cannot rescue us.
+	srv := &hetzner.Server{ID: 1, Name: "web", ServerType: &hetzner.ServerType{Name: "cx11"}}
 	api.AddServer(srv)
 
 	_, err := RescaleWithFallback(context.Background(), api, srv, "cpx31", []string{"cpx31", "cpx21", "cpx11"})
