@@ -74,6 +74,18 @@ func (s *Store) GetServer(id int64) (*Server, error) {
 	return scanServer(row)
 }
 
+// GetServerByHCloudID returns the server within a project that matches
+// the given Hetzner Cloud numeric ID. Returns ErrNotFound if no row
+// matches; the (project_id, hcloud_server_id) UNIQUE constraint makes
+// this lookup unambiguous.
+func (s *Store) GetServerByHCloudID(projectID int64, hcloudID int) (*Server, error) {
+	row := s.db.QueryRow(
+		`SELECT `+serverCols+` FROM servers WHERE project_id = ? AND hcloud_server_id = ?`,
+		projectID, hcloudID,
+	)
+	return scanServer(row)
+}
+
 func (s *Store) ListServersByProject(projectID int64) ([]*Server, error) {
 	rows, err := s.db.Query(`SELECT ` + serverCols + ` FROM servers WHERE project_id = ? ORDER BY id`, projectID)
 	if err != nil {

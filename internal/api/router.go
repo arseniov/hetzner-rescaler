@@ -4,8 +4,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+
+	"github.com/jonamat/hetzner-rescaler/internal/crypto"
+	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
+	"github.com/jonamat/hetzner-rescaler/internal/store"
 )
 
 // Deps holds dependencies the router needs. It is passed to NewRouter so
@@ -16,48 +21,44 @@ type Deps struct {
 	InternalToken string
 
 	// Store is the SQLite-backed persistence layer. Required for handlers
-	// that read or mutate engine state. The concrete type is wired in
-	// Task 4 via a type alias `type Store = *store.Store`.
-	Store *Store
+	// that read or mutate engine state.
+	Store *store.Store
 
-	// Hetzner factories: a function that returns a hetzner.API for a
-	// given project ID. Nil until Task 4 (project handlers) wires it up.
-	APIFor func(projectID int64) (HetznerAPI, error)
+	// Keyring is the AES-256 key used to seal Hetzner tokens before
+	// persistence. If nil the handler falls back to KeyFromEnv(), which
+	// reads RESCALER_ENCRYPTION_KEY from the environment (and generates
+	// a fresh key if unset).
+	Keyring *crypto.Keyring
+
+	// APIFor returns a hetzner.API for a given project ID. Required for
+	// handlers that talk to Hetzner (refresh, server-types).
+	APIFor func(projectID int64) (hetzner.API, error)
 }
-
-// Store is a placeholder so Deps.Store can be typed *Store. The real
-// type alias `type Store = *store.Store` is added in Task 4.
-type Store struct{}
-
-// HetznerAPI is the minimal Hetzner surface the API package needs.
-// The full interface lives in internal/hetzner; this is declared here so
-// router.go doesn't depend on that package's transitive deps.
-type HetznerAPI interface {
-	ListServers(ctx ctxLike) ([]HetznerServer, error)
-	GetServer(ctx ctxLike, id int) (*HetznerServer, error)
-	ListServerTypes(ctx ctxLike) ([]HetznerServerType, error)
-}
-
-// ctxLike avoids importing "context" in this stub interface.
-// The real interface in Task 5+ uses context.Context directly.
-type ctxLike interface {
-	Deadline() (deadline interface{}, ok bool)
-}
-
-// HetznerServer / HetznerServerType are minimal projections; the real
-// types come from internal/hetzner in later tasks.
-type (
-	HetznerServer     struct{ ID int; Name string; ServerType string }
-	HetznerServerType struct{ Name string; Available bool }
-)
 
 // NewRouter builds the HTTP mux. /api/healthz is always registered.
-// Every other /api/* route is registered as it is added in later tasks.
-func NewRouter(deps Deps) *http.ServeMux {
+// Every other /api/* route is registered as it is added.
+func NewRouter(deps Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
+
+	// All /api/* routes (except /api/healthz) require the internal token.
+	auth := RequireInternalToken(deps.InternalToken)
+
+	// Project routes
+	mux.Handle("GET /api/projects", auth(http.HandlerFunc(deps.handleListProjects)))
+	mux.Handle("POST /api/projects", auth(http.HandlerFunc(deps.handleCreateProject)))
+	mux.Handle("DELETE /api/projects/{id}", auth(http.HandlerFunc(deps.handleDeleteProject)))
+	mux.Handle("POST /api/projects/{id}/refresh", auth(http.HandlerFunc(deps.handleRefreshProject)))
+
+	// Server, window, action, event, server-type routes are registered in
+	// later tasks (Tasks 5–9).
+
 	return mux
 }
+
+// unused-import guard so the context package is referenced from this file
+// even before later tasks add their own context-aware handlers.
+var _ = context.Background
