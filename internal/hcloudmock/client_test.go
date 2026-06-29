@@ -2,7 +2,6 @@ package hcloudmock
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -42,12 +41,15 @@ func TestFakeUnavailableForType(t *testing.T) {
 	f := New()
 	f.MarkUnavailable("cpx31")
 
-	_, err := f.ChangeServerTypeReturnsErrorFor(context.Background(), &hetzner.Server{}, &hetzner.ServerType{Name: "cpx31"}, hetzner.ErrUnavailable)
+	srv := &hetzner.Server{ID: 1}
+	f.AddServer(srv)
+
+	_, err := f.ChangeServerType(context.Background(), srv, &hetzner.ServerType{Name: "cpx31"})
 	if err == nil {
 		t.Fatal("expected unavailable error")
 	}
 	if !hetzner.IsUnavailable(err) {
-		t.Fatalf("err = %v, want unavailable", err)
+		t.Fatalf("err = %v, want unavailable (wrapped)", err)
 	}
 }
 
@@ -77,5 +79,4 @@ func TestFakeGetActionProgressesAfterProgress(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("action did not reach success within 2s")
-	_ = errors.New
 }

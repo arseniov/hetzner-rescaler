@@ -42,7 +42,9 @@ func New() *Fake {
 	return f
 }
 
-// AddServer registers a server in the fake.
+// AddServer registers a server in the fake. If s.ID is 0, AddServer assigns
+// a new ID and writes it back into the caller's *Server — this mutates
+// the input.
 func (f *Fake) AddServer(s *hetzner.Server) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -147,7 +149,7 @@ func (f *Fake) GetAction(_ context.Context, id int) (*hetzner.Action, error) {
 	// calls return "running", the third returns "success". This mirrors
 	// Hetzner's typical behavior for short actions.
 	switch a.Progress {
-	case 0, 25:
+	case 0:
 		a.Progress = 50
 		a.Status = hetzner.ActionStatusRunning
 	case 50:
@@ -174,12 +176,4 @@ func (f *Fake) startAction(srv *hetzner.Server, command string) (*hetzner.Action
 	a.Resources = []*hcloud.ActionResource{{Type: "server", ID: srv.ID}}
 	f.actions[a.ID] = a
 	return a, nil
-}
-
-// ChangeServerTypeReturnsErrorFor is a test-only convenience to set an
-// override that returns a specific error and verify the caller classifies
-// it correctly.
-func (f *Fake) ChangeServerTypeReturnsErrorFor(_ context.Context, _ *hetzner.Server, target *hetzner.ServerType, err error) (interface{}, error) {
-	_ = target
-	return nil, err
 }
