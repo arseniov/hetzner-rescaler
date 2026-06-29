@@ -50,7 +50,7 @@ func migration001_initial(s *Store) error {
 	stmts := []string{
 		`CREATE TABLE projects (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL,
+			name TEXT NOT NULL UNIQUE,
 			hcloud_token_encrypted BLOB NOT NULL,
 			hcloud_token_nonce BLOB NOT NULL,
 			created_at INTEGER NOT NULL,
