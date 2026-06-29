@@ -35,3 +35,10 @@ push-docker:
 
 create-release:
 	./scripts/release.sh
+test-engine:
+	go test -race -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out -o coverage.html
+
+build-spa:
+	cd web && bun install && bun run build
+	cp -R web/build ./web_build_artifact

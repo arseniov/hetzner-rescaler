@@ -8,3 +8,6 @@
 
 # Git worktrees used by the superpowers workflow.
 .worktrees/
+
+# Local environment overrides — operators copy .env.example to .env
+.env
