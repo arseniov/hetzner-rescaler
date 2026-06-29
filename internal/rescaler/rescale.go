@@ -33,6 +33,9 @@ func Rescale(ctx context.Context, api hetzner.API, srv *hetzner.Server, targetTy
 		return nil
 	}
 
+	// We only sleep the provisioner wait when transitioning from running →
+	// change_type. Off → change_type intentionally omits the sleep because no
+	// shutdown just happened for the provisioner to recover from.
 	if srv.Status == hcloud.ServerStatusRunning {
 		act, err := api.ShutdownServer(ctx, srv)
 		if err != nil {
@@ -80,7 +83,10 @@ func waitAction(ctx context.Context, api hetzner.API, act *hetzner.Action) error
 		}
 		switch got.Status {
 		case hcloud.ActionStatusError:
-			return errors.New(got.ErrorMessage)
+			if aerr := got.Error(); aerr != nil {
+				return aerr
+			}
+			return errors.New("rescaler: action failed without error message")
 		case hcloud.ActionStatusSuccess:
 			return nil
 		default:
