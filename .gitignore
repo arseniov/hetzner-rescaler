@@ -1,3 +1,10 @@
 /bin
 /release
 /vendor
+
+# Local-only superpowers process artifacts (specs, plans, etc.)
+# Kept out of the repo on purpose; regenerate from the conversation.
+/docs/superpowers/
+
+# Git worktrees used by the superpowers workflow.
+.worktrees/
