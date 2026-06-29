@@ -23,7 +23,12 @@ type Server struct {
 	Timezone       string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	store          *Store
 }
+
+// Store returns the *Store that owns this server. It is set on rows created
+// via CreateServer but is nil on rows loaded directly from SQL by scanServer.
+func (srv *Server) Store() *Store { return srv.store }
 
 // Window is a scheduled scale-up window for a server in 'scheduled' mode.
 type Window struct {
@@ -60,6 +65,7 @@ func (s *Store) CreateServer(projectID int64, srv Server) (*Server, error) {
 	srv.ProjectID = projectID
 	srv.CreatedAt = now
 	srv.UpdatedAt = now
+	srv.store = s
 	return &srv, nil
 }
 
