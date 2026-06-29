@@ -70,7 +70,7 @@ func TestListAllEventsFilterByServerID(t *testing.T) {
 
 	// Filter for s1
 	id1 := s1.ID
-	got, err := s.ListAllEvents(0, &id1, 100)
+	got, err := s.ListAllEvents(0, &id1)
 	if err != nil {
 		t.Fatalf("ListAllEvents: %v", err)
 	}
@@ -79,11 +79,42 @@ func TestListAllEventsFilterByServerID(t *testing.T) {
 	}
 
 	// No filter
-	got, err = s.ListAllEvents(0, nil, 100)
+	got, err = s.ListAllEvents(0, nil)
 	if err != nil {
 		t.Fatalf("ListAllEvents: %v", err)
 	}
 	if len(got) != 2 {
 		t.Fatalf("got %d, want 2", len(got))
+	}
+}
+
+func TestEventListPendingFinishedAtZero(t *testing.T) {
+	s := newTestStore(t)
+	p, _ := s.CreateProject("p", []byte("t"), []byte("n"))
+	srv, _ := s.CreateServer(p.ID, Server{HCloudServerID: 1, Name: "x", BaseServerType: "cpx11", TopServerType: "cpx21", FallbackChain: []string{"cpx21", "cpx11"}, Mode: "manual", Timezone: "UTC"})
+
+	// Append an event without setting FinishedAt — it is still pending.
+	_, err := s.AppendEvent(Event{
+		ServerID:    srv.ID,
+		Kind:        "rescale_up",
+		FromType:    "cpx11",
+		ToType:      "cpx21",
+		StartedAt:   time.Now().UTC(),
+		OK:          true,
+		TriggeredBy: "scheduler",
+	})
+	if err != nil {
+		t.Fatalf("AppendEvent: %v", err)
+	}
+
+	events, err := s.ListEventsByServer(srv.ID, 10)
+	if err != nil {
+		t.Fatalf("ListEventsByServer: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("got %d, want 1", len(events))
+	}
+	if !events[0].FinishedAt.IsZero() {
+		t.Fatalf("FinishedAt = %v, want zero (pending)", events[0].FinishedAt)
 	}
 }
