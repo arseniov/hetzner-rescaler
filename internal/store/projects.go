@@ -10,19 +10,6 @@ import (
 // ErrNotFound is returned by Get* methods when no row matches.
 var ErrNotFound = errors.New("store: not found")
 
-// Temporary placeholder, replaced in Task 5.
-type Server struct {
-	ID             int64
-	ProjectID      int64
-	HCloudServerID int
-	Name           string
-	Mode           string
-	BaseServerType string
-	TopServerType  string
-	FallbackChain  []string
-	Timezone       string
-}
-
 // Project is a Hetzner Cloud project (identified by its API token).
 type Project struct {
 	ID                   int64
@@ -92,49 +79,6 @@ func (s *Store) ListProjects() ([]*Project, error) {
 func (s *Store) DeleteProject(id int64) error {
 	_, err := s.db.Exec(`DELETE FROM projects WHERE id = ?`, id)
 	return err
-}
-
-// Temporary stubs for Task 4, replaced in Task 5.
-// CreateServer inserts a new server under a project.
-func (s *Store) CreateServer(projectID int64, srv Server) (*Server, error) {
-	res, err := s.db.Exec(
-		`INSERT INTO servers (project_id, hcloud_server_id, name, label, base_server_type, top_server_type, fallback_chain, mode, promote_state, timezone, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
-		projectID, srv.HCloudServerID, srv.Name, "", srv.BaseServerType, srv.TopServerType,
-		"[]", srv.Mode, srv.Timezone, time.Now().Unix(), time.Now().Unix(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("store: insert server: %w", err)
-	}
-	id, _ := res.LastInsertId()
-	srv.ID = id
-	srv.ProjectID = projectID
-	return &srv, nil
-}
-
-// GetServer returns a server by id.
-func (s *Store) GetServer(id int64) (*Server, error) {
-	row := s.db.QueryRow(
-		`SELECT id, project_id, hcloud_server_id, name, base_server_type, top_server_type, mode, timezone
-		 FROM servers WHERE id = ?`, id,
-	)
-	var srv Server
-	err := row.Scan(&srv.ID, &srv.ProjectID, &srv.HCloudServerID, &srv.Name, &srv.BaseServerType, &srv.TopServerType, &srv.Mode, &srv.Timezone)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("store: scan server: %w", err)
-	}
-	return &srv, nil
-}
-
-// Add UNIQUE constraint on name via a separate migration step (idempotent).
-// We add it here as a no-op ALTER that we ignore if it already exists.
-func init() {
-	// Best-effort UNIQUE on name. The store package's migrate() handles the
-	// CREATE TABLE for projects, so we add the constraint via an index that
-	// lives in the same migration. (No-op here; see Task 3's migration001.)
 }
 
 // rowScanner abstracts *sql.Row and *sql.Rows.
