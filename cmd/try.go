@@ -4,118 +4,119 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
-	"github.com/fatih/color"
-	"github.com/hetznercloud/hcloud-go/hcloud"
-	"github.com/jonamat/hetzner-rescaler/pkg/config"
-	"github.com/jonamat/hetzner-rescaler/pkg/rescaler"
-	"github.com/manifoldco/promptui"
+	"github.com/jonamat/hetzner-rescaler/internal/crypto"
+	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
+	"github.com/jonamat/hetzner-rescaler/internal/rescaler"
+	"github.com/jonamat/hetzner-rescaler/internal/store"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
-
-func init() {
-	rootCmd.AddCommand(tryCmd)
-	tryCmd.Flags().BoolP("skip", "s", false, "Skip all user interactions")
-}
 
 /* Try command */
 var tryCmd = &cobra.Command{
-	Use:   "try",
-	Short: "Try a complete rescale cycle",
-	Long:  "Try a complete rescale cycle",
-	Run:   RunTry,
+	Use:   "try <server-id> <up|down>",
+	Short: "One-shot rescale of a single server",
+	Long:  "Rescales a single registered server up or down immediately. The server must be registered first (see `hetzner-rescaler config`).",
+	Args:  cobra.ExactArgs(2),
+	Run:   runTry,
 }
 
-/* Run fn for try command */
-func RunTry(cmd *cobra.Command, args []string) {
-	skip, err := cmd.Flags().GetBool("skip")
+func init() {
+	rootCmd.AddCommand(tryCmd)
+}
+
+func runTry(cmd *cobra.Command, args []string) {
+	serverID, err := strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
-		color.Red("Error: %s", err.Error())
+		fmt.Println("invalid server id:", args[0])
+		return
+	}
+	direction := args[1]
+	if direction != "up" && direction != "down" {
+		fmt.Println("direction must be 'up' or 'down'")
 		return
 	}
 
-	// Get the configuration from viper
-	if err := config.CheckEnvs(); err != nil {
-		color.Red("Error: %s", err.Error())
-		cmd.Help()
-		return
-	}
-	hCloudToken := viper.GetString("HCLOUD_TOKEN")
-	serverId := viper.GetInt("SERVER_ID")
-	topServerName := viper.GetString("TOP_SERVER_NAME")
-	baseServerName := viper.GetString("BASE_SERVER_NAME")
-
-	// Create hetzner Cloud API client
-	client := hcloud.NewClient(hcloud.WithToken(hCloudToken))
-
-	// Get server
-	server, _, err := client.Server.GetByID(context.Background(), serverId)
+	st, err := openStore()
 	if err != nil {
-		color.Red("Error while getting server: ", err.Error())
+		fmt.Println("error:", err)
 		return
 	}
-	if server == nil {
-		color.Red("Server not found")
-		return
-	}
+	defer st.Close()
 
-	// Print info about current configuration
-	fmt.Printf(`The server named "%s" with ID %s, currently of type %s, will be:
-→ Upgraded to server type %s
-→ Downgraded to server type %s `,
-		color.GreenString(server.Name),
-		color.GreenString(strconv.Itoa(server.ID)),
-		color.GreenString(server.ServerType.Name),
-		color.GreenString(topServerName),
-		color.GreenString(baseServerName),
-	)
-
-	// Ask for confirmation if --skip is not set
-	if !skip {
-		confirmInput := promptui.Prompt{
-			Label: "Do you want to try this configuration? (y/n)",
-		}
-		confirm, err := confirmInput.Run()
-		if err != nil {
-			color.Red("Error: %s", err.Error())
-			return
-		}
-		fmt.Printf("\n\n")
-
-		if confirm != "y" {
-			color.Red("Operation aborted")
-			return
-		}
-	}
-
-	/* --------------------------------- Rescale -------------------------------- */
-	color.Green("Start upgrading server...")
-
-	if err := rescaler.Rescale(client, server, topServerName); err != nil {
-		color.Red("Error while resizing server: ", err.Error())
-		return
-	}
-
-	// Update the server instance
-	server, _, err = client.Server.GetByID(context.Background(), serverId)
+	srv, err := st.GetServer(serverID)
 	if err != nil {
-		fmt.Println(color.RedString("Error while getting server: ", err.Error()))
+		fmt.Println("server not found:", err)
 		return
 	}
-	if server == nil {
-		fmt.Println(color.RedString("Error: Server not found"))
+	proj, err := st.GetProject(srv.ProjectID)
+	if err != nil {
+		fmt.Println("project not found:", err)
+		return
+	}
+	key, err := loadOrGenerateKey()
+	if err != nil {
+		fmt.Println("key:", err)
+		return
+	}
+	token, err := crypto.Decrypt(key, proj.HCloudTokenEncrypted, proj.HCloudTokenNonce)
+	if err != nil {
+		fmt.Println("decrypt token:", err)
+		return
+	}
+	api, err := hetzner.NewClient(string(token))
+	if err != nil {
+		fmt.Println("client:", err)
 		return
 	}
 
-	color.Green("Server successfully upgraded\n\n")
-	color.Green("Start downgrading server...")
-
-	if err := rescaler.Rescale(client, server, baseServerName); err != nil {
-		color.Red("Error while resizing server: ", err.Error())
+	hsrv, err := api.GetServer(context.Background(), srv.HCloudServerID)
+	if err != nil {
+		fmt.Println("get server:", err)
 		return
 	}
-	color.Green("Server successfully downgraded\n\n")
+	target := srv.TopServerType
+	if direction == "down" {
+		target = srv.BaseServerType
+	}
+	if hsrv.ServerType.Name == target {
+		fmt.Printf("server is already at %s, nothing to do\n", target)
+		return
+	}
 
-	color.New(color.FgGreen).Add(color.Bold).Println("The rescale cycle has been completed succefully")
+	fmt.Printf("Rescaling server %d (%s) from %s to %s...\n", hsrv.ID, hsrv.Name, hsrv.ServerType.Name, target)
+	start := time.Now().UTC()
+	used, err := rescaler.RescaleWithFallback(context.Background(), api, hsrv, target, srv.FallbackChain)
+	finished := time.Now().UTC()
+	if err != nil {
+		_, _ = st.AppendEvent(store.Event{
+			ServerID:    srv.ID,
+			Kind:        "rescale_failed",
+			FromType:    hsrv.ServerType.Name,
+			ToType:      target,
+			StartedAt:   start,
+			FinishedAt:  finished, // value type (not pointer) — Task 6 review change
+			OK:          false,
+			Error:       err.Error(),
+			TriggeredBy: "manual",
+		})
+		fmt.Println("rescale failed:", err)
+		return
+	}
+	kind := "rescale_up"
+	if direction == "down" {
+		kind = "rescale_down"
+	}
+	_, _ = st.AppendEvent(store.Event{
+		ServerID:    srv.ID,
+		Kind:        kind,
+		FromType:    hsrv.ServerType.Name,
+		ToType:      used,
+		StartedAt:   start,
+		FinishedAt:  finished, // value type
+		OK:          true,
+		TriggeredBy: "manual",
+	})
+	fmt.Printf("OK: rescaled to %s\n", used)
 }
