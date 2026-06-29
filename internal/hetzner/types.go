@@ -14,3 +14,11 @@ type Server = hcloud.Server
 
 // Action is a small re-export of hcloud.Action.
 type Action = hcloud.Action
+
+// Action status constants, re-exported from hcloud.ActionStatus* for use in
+// tests and in the rescaler code that polls action status.
+const (
+	ActionStatusRunning = hcloud.ActionStatusRunning
+	ActionStatusSuccess = hcloud.ActionStatusSuccess
+	ActionStatusError   = hcloud.ActionStatusError
+)
