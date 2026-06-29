@@ -16,14 +16,18 @@ type Deps struct {
 	InternalToken string
 
 	// Store is the SQLite-backed persistence layer. Required for handlers
-	// that read or mutate engine state. Typed as `any` in this stub; the
-	// concrete type is wired in Task 4.
-	Store any
+	// that read or mutate engine state. The concrete type is wired in
+	// Task 4 via a type alias `type Store = *store.Store`.
+	Store *Store
 
 	// Hetzner factories: a function that returns a hetzner.API for a
 	// given project ID. Nil until Task 4 (project handlers) wires it up.
 	APIFor func(projectID int64) (HetznerAPI, error)
 }
+
+// Store is a placeholder so Deps.Store can be typed *Store. The real
+// type alias `type Store = *store.Store` is added in Task 4.
+type Store struct{}
 
 // HetznerAPI is the minimal Hetzner surface the API package needs.
 // The full interface lives in internal/hetzner; this is declared here so
