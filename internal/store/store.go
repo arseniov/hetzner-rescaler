@@ -5,6 +5,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"os"
 
 	_ "modernc.org/sqlite" // pure-Go sqlite driver
 )
@@ -39,3 +40,13 @@ func (s *Store) DB() *sql.DB { return s.db }
 
 // Close closes the database.
 func (s *Store) Close() error { return s.db.Close() }
+
+// OpenTemp opens a database in a temp file. The caller must Close it.
+func OpenTemp() (*Store, error) {
+	f, err := os.CreateTemp("", "rescaler-test-*.db")
+	if err != nil {
+		return nil, err
+	}
+	f.Close()
+	return Open(f.Name())
+}
