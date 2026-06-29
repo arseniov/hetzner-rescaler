@@ -153,9 +153,7 @@ func (s *Scheduler) tickAutoPromote(srv *store.Server, api hetzner.API) {
 	switch *srv.PromoteState {
 	case "promote_requested":
 		if current == srv.BaseServerType {
-			if err := s.tryPromote(srv, api, srv.TopServerType); err != nil {
-				s.log.Printf("server %d: promote: %v", srv.ID, err)
-			}
+			s.dispatch(srv, api, srv.TopServerType, "auto_promote")
 		}
 	case "demote_requested":
 		if current == srv.TopServerType {
