@@ -1,172 +1,121 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
-	"log"
 	"os"
-	"strconv"
+	"os/signal"
+	"syscall"
 	"time"
 
-	"github.com/fatih/color"
-	"github.com/hetznercloud/hcloud-go/hcloud"
-	"github.com/jonamat/hetzner-rescaler/pkg/config"
-	"github.com/jonamat/hetzner-rescaler/pkg/rescaler"
-	"github.com/manifoldco/promptui"
+	"github.com/jonamat/hetzner-rescaler/internal/crypto"
+	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
+	"github.com/jonamat/hetzner-rescaler/internal/scheduler"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 /* Start command */
 var startCmd = &cobra.Command{
 	Use:   "start",
-	Short: "Start rescale timers",
-	Long:  "Start rescale timers",
-	Run:   RunStart,
+	Short: "Start the scheduler loop (reads from SQLite)",
+	Run:   runStart,
 }
 
 func init() {
 	rootCmd.AddCommand(startCmd)
-	startCmd.Flags().BoolP("skip", "s", false, "Skip all user interactions")
 }
 
-/* Run fn for start command */
-func RunStart(cmd *cobra.Command, args []string) {
-	skip, err := cmd.Flags().GetBool("skip")
+func runStart(cmd *cobra.Command, args []string) {
+	st, err := openStore()
 	if err != nil {
-		log.Println(color.RedString("Error: %s", err.Error()))
+		fmt.Println("error:", err)
 		return
 	}
+	defer st.Close()
 
-	// Get the configuration from viper
-	if err := config.CheckEnvs(); err != nil {
-		log.Println(color.RedString("Error: %s", err.Error()))
-		cmd.Help()
-		return
-	}
-	hCloudToken := viper.GetString("HCLOUD_TOKEN")
-	serverId := viper.GetInt("SERVER_ID")
-	topServerName := viper.GetString("TOP_SERVER_NAME")
-	baseServerName := viper.GetString("BASE_SERVER_NAME")
-	hourStart := viper.GetString("HOUR_START")
-	hourStop := viper.GetString("HOUR_STOP")
-
-	// Create hetzner Cloud API client
-	client := hcloud.NewClient(hcloud.WithToken(hCloudToken))
-
-	// Get server
-	server, _, err := client.Server.GetByID(context.Background(), serverId)
+	servers, err := st.ListAllServers()
 	if err != nil {
-		log.Println(color.RedString("Error while getting server: ", err.Error()))
+		fmt.Println("list servers:", err)
 		return
 	}
-	if server == nil {
-		log.Println(color.RedString("Error: Server not found"))
+	if len(servers) == 0 {
+		fmt.Println("No servers configured. Run `hetzner-rescaler config` to add one.")
 		return
 	}
 
-	// Get timezione & time info
-	location, err := time.LoadLocation(os.Getenv("TZ"))
+	key, err := loadOrGenerateKey()
 	if err != nil {
-		color.Red("Error while loading timezone: %s.\nFallback to UTC", err.Error())
-		location = time.UTC
+		fmt.Println("key:", err)
+		return
 	}
 
-	currentTime := time.Now().In(location)
-	tz, tzOffsetNum := currentTime.Zone()
-	tzOffset := strconv.Itoa(tzOffsetNum / 3600) // seconds to hours
-	if tzOffsetNum > 0 {
-		tzOffset = "+" + tzOffset
-	}
-
-	// Print info about current configuration
-	fmt.Printf(`The server named "%s" with ID %s, currently of type %s, will be:
-→ Upgraded to server type %s everyday at %s
-→ Downgraded to server type %s everyday at %s
-
-The timezone is set to %s with a UTC offset of %s.
-The time on this machine is %s.
-`+"\n\n",
-		color.GreenString(server.Name),
-		color.GreenString(strconv.Itoa(server.ID)),
-		color.GreenString(server.ServerType.Name),
-		color.GreenString(topServerName),
-		color.GreenString(hourStart),
-		color.GreenString(baseServerName),
-		color.GreenString(hourStop),
-		color.GreenString(tz),
-		color.GreenString(tzOffset),
-		color.GreenString(currentTime.Format("15:04")),
-	)
-
-	// Ask for confirmation if --skip is not set
-	if !skip {
-		confirmInput := promptui.Prompt{
-			Label: "Do you want to start with this configuration? (y/n)",
+	// Build one Hetzner API per project
+	apiByProject := map[int64]hetzner.API{}
+	for _, srv := range servers {
+		if _, ok := apiByProject[srv.ProjectID]; ok {
+			continue
 		}
-		confirm, err := confirmInput.Run()
+		proj, err := st.GetProject(srv.ProjectID)
 		if err != nil {
-			log.Println(color.RedString("Error: %s", err.Error()))
+			fmt.Println("project:", err)
 			return
 		}
-
-		if confirm != "y" {
-			fmt.Println(color.RedString("Operation aborted"))
+		token, err := crypto.Decrypt(key, proj.HCloudTokenEncrypted, proj.HCloudTokenNonce)
+		if err != nil {
+			fmt.Println("decrypt token:", err)
 			return
 		}
+		api, err := hetzner.NewClient(string(token))
+		if err != nil {
+			fmt.Println("client:", err)
+			return
+		}
+		apiByProject[srv.ProjectID] = api
 	}
 
-	/* ------------------------------- Start timer ------------------------------ */
-	log.Println(color.GreenString("Timer started\n"))
-
-	for {
-		hour, min, _ := time.Now().Clock()
-		currentHour := fmt.Sprintf("%02d:%02d", hour, min)
-
-		if currentHour == hourStart {
-			log.Println(color.GreenString("Start upgrading server..."))
-
-			if err := rescaler.Rescale(client, server, topServerName); err != nil {
-				log.Println(color.RedString("Error while resizing server: ", err.Error()))
-				return
-			}
-
-			// Update the server instance
-			server, _, err = client.Server.GetByID(context.Background(), serverId)
-			if err != nil {
-				log.Println(color.RedString("Error while getting server: ", err.Error()))
-				return
-			}
-			if server == nil {
-				log.Println(color.RedString("Error: Server not found"))
-				return
-			}
-
-			log.Println(color.GreenString("Server successfully upgraded\n"))
-		}
-
-		if currentHour == hourStop {
-			log.Println(color.GreenString("Start downgrading server..."))
-
-			if err := rescaler.Rescale(client, server, baseServerName); err != nil {
-				log.Println(color.RedString("Error while resizing server: ", err.Error()))
-				return
-			}
-
-			// Update the server instance
-			server, _, err = client.Server.GetByID(context.Background(), serverId)
-			if err != nil {
-				log.Println(color.RedString("Error while getting server: ", err.Error()))
-				return
-			}
-			if server == nil {
-				log.Println(color.RedString("Error: Server not found"))
-				return
-			}
-
-			log.Println(color.GreenString("Server successfully downgraded\n"))
-		}
-
-		time.Sleep(time.Second * 60)
+	// Phase 1: a single scheduler instance with one project's API.
+	// Multi-project in one process is phase 2; for now, run one `start` per
+	// project if you have more than one.
+	//
+	// BUG FIX: do NOT index the map by `0` — SQLite AUTOINCREMENT IDs start
+	// at 1, so apiByProject[0] would always be nil. Pick the first API we
+	// actually built.
+	var firstAPI hetzner.API
+	var firstProjectID int64
+	for id, api := range apiByProject {
+		firstAPI = api
+		firstProjectID = id
+		break
 	}
+	if firstAPI == nil {
+		fmt.Println("error: failed to build API client for any project")
+		return
+	}
+	if len(apiByProject) > 1 {
+		fmt.Printf("WARNING: multiple projects detected; phase 1 schedules only project %d. Run one `hetzner-rescaler start` per project for full coverage.\n", firstProjectID)
+	}
+
+	sched := scheduler.New(st, firstAPI, scheduler.RealClock{}, 30*time.Second)
+
+	// Register only the servers that belong to the selected project.
+	registered := 0
+	for _, srv := range servers {
+		if srv.ProjectID != firstProjectID {
+			continue
+		}
+		sched.Add(srv.ID)
+		registered++
+	}
+
+	fmt.Printf("Scheduler started for %d servers. Press Ctrl+C to stop.\n", registered)
+
+	// Handle SIGINT/SIGTERM
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sig
+		fmt.Println("\nShutting down...")
+		sched.Stop()
+	}()
+
+	sched.Run()
 }
