@@ -52,7 +52,11 @@ func (d Deps) handleCreateServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := d.Store.GetProject(req.ProjectID); err != nil {
-		writeJSONError(w, http.StatusBadRequest, "unknown project_id")
+		if errors.Is(err, store.ErrNotFound) {
+			writeJSONError(w, http.StatusBadRequest, "unknown project_id")
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	srv, err := d.Store.CreateServer(req.ProjectID, store.Server{
@@ -83,6 +87,11 @@ func (d Deps) handleUpdateServer(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
+	if req.Name == "" || req.BaseServerType == "" || req.TopServerType == "" ||
+		len(req.FallbackChain) == 0 || req.Mode == "" || req.Timezone == "" {
+		writeJSONError(w, http.StatusBadRequest, "missing required fields")
+		return
+	}
 	existing, err := d.Store.GetServer(id)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -110,6 +119,14 @@ func (d Deps) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathInt64(r, "id")
 	if !ok {
 		writeJSONError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+	if _, err := d.Store.GetServer(id); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeJSONError(w, http.StatusNotFound, "server not found")
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if err := d.Store.DeleteServer(id); err != nil {
