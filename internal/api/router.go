@@ -33,6 +33,11 @@ type Deps struct {
 	// APIFor returns a hetzner.API for a given project ID. Required for
 	// handlers that talk to Hetzner (refresh, server-types).
 	APIFor func(projectID int64) (hetzner.API, error)
+
+	// Rescaler runs a rescale. It is a function (not a method on a struct)
+	// so tests can stub it. In production the cmd layer wires it to
+	// scheduler.dispatch() or rescaler.RescaleWithFallback.
+	Rescaler func(ctx context.Context, srv *store.Server, target string) error
 }
 
 // NewRouter builds the HTTP mux. /api/healthz is always registered.
@@ -66,8 +71,12 @@ func NewRouter(deps Deps) http.Handler {
 	mux.Handle("PUT /api/windows/{wid}", auth(http.HandlerFunc(deps.handleUpdateWindow)))
 	mux.Handle("DELETE /api/windows/{wid}", auth(http.HandlerFunc(deps.handleDeleteWindow)))
 
-	// Action, event, server-type routes are registered in later tasks
-	// (Tasks 7–9).
+	// Action routes
+	mux.Handle("POST /api/servers/{id}/rescale", auth(http.HandlerFunc(deps.handleRescale)))
+	mux.Handle("POST /api/servers/{id}/promote", auth(http.HandlerFunc(deps.handlePromote)))
+	mux.Handle("POST /api/servers/{id}/demote", auth(http.HandlerFunc(deps.handleDemote)))
+
+	// Event, server-type routes are registered in later tasks (Tasks 8–9).
 
 	return mux
 }
