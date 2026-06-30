@@ -76,7 +76,11 @@ func NewRouter(deps Deps) http.Handler {
 	mux.Handle("POST /api/servers/{id}/promote", auth(http.HandlerFunc(deps.handlePromote)))
 	mux.Handle("POST /api/servers/{id}/demote", auth(http.HandlerFunc(deps.handleDemote)))
 
-	// Event, server-type routes are registered in later tasks (Tasks 8–9).
+	// Event routes
+	mux.Handle("GET /api/servers/{id}/events", auth(http.HandlerFunc(deps.handleServerEvents)))
+	mux.Handle("GET /api/events", auth(http.HandlerFunc(deps.handleGlobalEvents)))
+
+	// Server-type routes are registered in later tasks (Task 9).
 
 	return mux
 }
