@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/jonamat/hetzner-rescaler/internal/crypto"
 	"github.com/jonamat/hetzner-rescaler/internal/store"
 )
 
@@ -16,6 +17,25 @@ func openStore() (*store.Store, error) {
 		path = filepath.Join(userHomeDir(), ".hetzner-rescaler", "db.sqlite")
 	}
 	return store.Open(path)
+}
+
+// openStoreAndKeyring opens the SQLite store at the configured path and
+// builds (or loads) an AES-GCM keyring keyed for token encryption. Used
+// by `serve` which needs both at startup.
+func openStoreAndKeyring() (*store.Store, *crypto.Keyring, error) {
+	raw, err := loadOrGenerateKey()
+	if err != nil {
+		return nil, nil, fmt.Errorf("load key: %w", err)
+	}
+	key, err := crypto.NewKeyringFromBytes(raw)
+	if err != nil {
+		return nil, nil, fmt.Errorf("init keyring: %w", err)
+	}
+	s, err := openStore()
+	if err != nil {
+		return nil, nil, err
+	}
+	return s, key, nil
 }
 
 func userHomeDir() string {

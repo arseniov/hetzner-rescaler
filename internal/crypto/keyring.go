@@ -27,6 +27,19 @@ func NewKeyring() (*Keyring, error) {
 	return &Keyring{key: k}, nil
 }
 
+// NewKeyringFromBytes wraps an externally-sourced 32-byte key in a Keyring.
+// Used by the cmd layer, which loads the key from RESCALER_TOKEN_ENCRYPTION_KEY
+// or a file (raw bytes — not base64/hex). Returns ErrInvalidKey if the key
+// is not exactly 32 bytes.
+func NewKeyringFromBytes(raw []byte) (*Keyring, error) {
+	if len(raw) != 32 {
+		return nil, ErrInvalidKey
+	}
+	c := make([]byte, 32)
+	copy(c, raw)
+	return &Keyring{key: c}, nil
+}
+
 // LoadKeyring returns a Keyring from the RESCALER_ENCRYPTION_KEY
 // environment variable. The variable can be base64 (preferred) or hex
 // encoded; it must decode to exactly 32 bytes. If unset, a fresh random
