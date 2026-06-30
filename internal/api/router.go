@@ -60,8 +60,14 @@ func NewRouter(deps Deps) http.Handler {
 	mux.Handle("PUT /api/servers/{id}", auth(http.HandlerFunc(deps.handleUpdateServer)))
 	mux.Handle("DELETE /api/servers/{id}", auth(http.HandlerFunc(deps.handleDeleteServer)))
 
-	// Window, action, event, server-type routes are registered in
-	// later tasks (Tasks 6–9).
+	// Window routes
+	mux.Handle("GET /api/servers/{id}/windows", auth(http.HandlerFunc(deps.handleListWindows)))
+	mux.Handle("POST /api/servers/{id}/windows", auth(http.HandlerFunc(deps.handleCreateWindow)))
+	mux.Handle("PUT /api/windows/{wid}", auth(http.HandlerFunc(deps.handleUpdateWindow)))
+	mux.Handle("DELETE /api/windows/{wid}", auth(http.HandlerFunc(deps.handleDeleteWindow)))
+
+	// Action, event, server-type routes are registered in later tasks
+	// (Tasks 7–9).
 
 	return mux
 }

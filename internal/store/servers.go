@@ -228,3 +228,26 @@ func (s *Store) DeleteWindow(id int64) error {
 	_, err := s.db.Exec(`DELETE FROM windows WHERE id = ?`, id)
 	return err
 }
+
+// UpdateWindow updates a window's mutable fields. Returns ErrNotFound
+// when no window with the given id exists.
+func (s *Store) UpdateWindow(id int64, w Window) (*Window, error) {
+	enabled := 0
+	if w.Enabled {
+		enabled = 1
+	}
+	res, err := s.db.Exec(
+		`UPDATE windows SET label=?, days_of_week=?, start_time=?, stop_time=?, target_type=?, enabled=?
+		 WHERE id=?`,
+		w.Label, w.DaysOfWeek, w.StartTime, w.StopTime, w.TargetType, enabled, id,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: update window: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return nil, ErrNotFound
+	}
+	w.ID = id
+	return &w, nil
+}
