@@ -57,6 +57,7 @@ func (d Deps) handlePromote(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "promote is only valid in auto_promote mode")
 		return
 	}
+	// UpdateServer takes srv by value, so mutating the local pointer is safe.
 	state := "promote_requested"
 	srv.PromoteState = &state
 	if err := d.Store.UpdateServer(*srv); err != nil {
@@ -80,6 +81,7 @@ func (d Deps) handleDemote(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "demote is only valid in auto_promote mode")
 		return
 	}
+	// UpdateServer takes srv by value, so mutating the local pointer is safe.
 	state := "demote_requested"
 	srv.PromoteState = &state
 	if err := d.Store.UpdateServer(*srv); err != nil {
