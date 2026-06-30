@@ -20,7 +20,10 @@ func TestServerTypes_ProxiesAndMarksUnavailable(t *testing.T) {
 		types: []*hetzner.ServerType{
 			{
 				Name: "cpx11", Description: "Intel/AMD shared", Cores: 2, Memory: 2.0, Disk: 40,
-				Pricings: []hcloud.ServerTypeLocationPricing{{Location: &hcloud.Location{Name: "fsn1"}}},
+				Pricings: []hcloud.ServerTypeLocationPricing{{
+					Location: &hcloud.Location{Name: "fsn1"},
+					Monthly:  hcloud.Price{Currency: "EUR", VATRate: "19.00", Net: "2.76", Gross: "3.29"},
+				}},
 			},
 			{
 				Name: "cpx31", Description: "Intel/AMD dedicated", Cores: 4, Memory: 8.0, Disk: 80,
@@ -53,6 +56,18 @@ func TestServerTypes_ProxiesAndMarksUnavailable(t *testing.T) {
 	}
 	if got[1].Available {
 		t.Fatalf("cpx31 should be marked unavailable")
+	}
+	// Verify the full DTO mapping: cpx11 should have its core fields and
+	// a non-zero monthly price parsed from the Gross string.
+	if got[0].Name != "cpx11" || got[0].Cores != 2 || got[0].MemoryGB != 2.0 || got[0].DiskGB != 40 {
+		t.Fatalf("cpx11 fields not mapped correctly: %+v", got[0])
+	}
+	if got[0].PriceMonthlyEUR <= 0 {
+		t.Fatalf("expected price > 0 for available type, got %v", got[0].PriceMonthlyEUR)
+	}
+	// The unavailable type should have a zero price.
+	if got[1].PriceMonthlyEUR != 0 {
+		t.Fatalf("expected price = 0 for unavailable type, got %v", got[1].PriceMonthlyEUR)
 	}
 }
 
