@@ -49,9 +49,8 @@ func (d Deps) handleGlobalEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// parseLimit reads the optional "limit" query parameter. Returns 0 if the
-// parameter is missing or unparseable; the store treats limit <= 0 as
-// "no limit", so the handler layer doesn't need to know the default.
+// parseLimit reads the optional "limit" query parameter. Defaults to 100
+// when missing or unparseable to bound the response size on public endpoints.
 func parseLimit(r *http.Request) int {
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		v, err := strconv.Atoi(raw)
@@ -59,7 +58,7 @@ func parseLimit(r *http.Request) int {
 			return v
 		}
 	}
-	return 0
+	return 100
 }
 
 func eventToResponse(e *store.Event) EventResponse {

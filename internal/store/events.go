@@ -50,15 +50,14 @@ func (s *Store) AppendEvent(e Event) (int64, error) {
 	return id, nil
 }
 
+// ListEventsByServer returns up to `limit` events for the given server,
+// most recent first. The caller is responsible for providing a positive limit.
 func (s *Store) ListEventsByServer(serverID int64, limit int) ([]*Event, error) {
-	q := `SELECT id, server_id, kind, from_type, to_type, started_at, finished_at, ok, error, triggered_by
-		  FROM events WHERE server_id = ? ORDER BY id DESC`
-	args := []any{serverID}
-	if limit > 0 {
-		q += " LIMIT ?"
-		args = append(args, limit)
-	}
-	rows, err := s.db.Query(q, args...)
+	rows, err := s.db.Query(
+		`SELECT id, server_id, kind, from_type, to_type, started_at, finished_at, ok, error, triggered_by
+		 FROM events WHERE server_id = ? ORDER BY id DESC LIMIT ?`,
+		serverID, limit,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("store: list events: %w", err)
 	}
