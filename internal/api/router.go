@@ -80,7 +80,8 @@ func NewRouter(deps Deps) http.Handler {
 	mux.Handle("GET /api/servers/{id}/events", auth(http.HandlerFunc(deps.handleServerEvents)))
 	mux.Handle("GET /api/events", auth(http.HandlerFunc(deps.handleGlobalEvents)))
 
-	// Server-type routes are registered in later tasks (Task 9).
+	// Server-type route (proxies to Hetzner via the first project's API)
+	mux.Handle("GET /api/server-types", auth(http.HandlerFunc(deps.handleServerTypes)))
 
 	return mux
 }
