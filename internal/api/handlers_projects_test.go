@@ -41,14 +41,7 @@ func newTestDeps(t *testing.T) (Deps, *crypto.Keyring) {
 	}, k
 }
 
-// recorder is a tiny helper that runs an HTTP request through the handler
-// and returns the response recorder.
-func recorder(t *testing.T, h http.Handler, req *http.Request) *httptest.ResponseRecorder {
-	t.Helper()
-	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, req)
-	return rr
-}
+// authedRequest is defined in testhelpers_test.go.
 
 func authedRequest(t *testing.T, method, path string, body any) *http.Request {
 	t.Helper()

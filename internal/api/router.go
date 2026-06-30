@@ -53,8 +53,15 @@ func NewRouter(deps Deps) http.Handler {
 	mux.Handle("DELETE /api/projects/{id}", auth(http.HandlerFunc(deps.handleDeleteProject)))
 	mux.Handle("POST /api/projects/{id}/refresh", auth(http.HandlerFunc(deps.handleRefreshProject)))
 
-	// Server, window, action, event, server-type routes are registered in
-	// later tasks (Tasks 5–9).
+	// Server routes
+	mux.Handle("GET /api/servers", auth(http.HandlerFunc(deps.handleListServers)))
+	mux.Handle("GET /api/servers/{id}", auth(http.HandlerFunc(deps.handleGetServer)))
+	mux.Handle("POST /api/servers", auth(http.HandlerFunc(deps.handleCreateServer)))
+	mux.Handle("PUT /api/servers/{id}", auth(http.HandlerFunc(deps.handleUpdateServer)))
+	mux.Handle("DELETE /api/servers/{id}", auth(http.HandlerFunc(deps.handleDeleteServer)))
+
+	// Window, action, event, server-type routes are registered in
+	// later tasks (Tasks 6–9).
 
 	return mux
 }

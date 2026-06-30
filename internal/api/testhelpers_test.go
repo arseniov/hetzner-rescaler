@@ -2,13 +2,26 @@ package api
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
+	"testing"
 
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 )
 
 // itoa is a tiny helper used by tests to build path segments.
 func itoa(i int64) string { return strconv.FormatInt(i, 10) }
+
+// recorder runs an HTTP request through the handler and returns the
+// response recorder. Lives here so every test file in this package can
+// share it without redefining.
+func recorder(t *testing.T, h http.Handler, req *http.Request) *httptest.ResponseRecorder {
+	t.Helper()
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	return rr
+}
 
 // fakeHetzner is a tiny in-memory stub satisfying hetzner.API for tests.
 // It returns pre-programmed responses and nil for the SDK-pointer methods

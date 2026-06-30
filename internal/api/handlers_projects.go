@@ -187,28 +187,6 @@ func projectToResponse(p *store.Project) ProjectResponse {
 	}
 }
 
-// serverToResponse converts a *store.Server to its API projection.
-// Defined here for the refresh handler; the server-only handlers
-// (Task 5) will reuse this same helper.
-func serverToResponse(s *store.Server) ServerResponse {
-	if s == nil {
-		return ServerResponse{}
-	}
-	return ServerResponse{
-		ID:             s.ID,
-		ProjectID:      s.ProjectID,
-		HCloudServerID: s.HCloudServerID,
-		Name:           s.Name,
-		Label:          s.Label,
-		BaseServerType: s.BaseServerType,
-		TopServerType:  s.TopServerType,
-		FallbackChain:  s.FallbackChain,
-		Mode:           s.Mode,
-		PromoteState:   s.PromoteState,
-		Timezone:       s.Timezone,
-	}
-}
-
 // pathInt64 extracts an int64 path parameter by name. Returns (0, false)
 // if the parameter is missing or unparseable.
 func pathInt64(r *http.Request, name string) (int64, bool) {
