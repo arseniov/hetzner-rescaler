@@ -19,11 +19,17 @@ ARG TARGETARCH
 
 RUN apt update && apt install -y ca-certificates tzdata
 
+# Download modules first (better Docker layer caching: only re-download
+# when go.mod/go.sum change). The project does not vendor dependencies,
+# so we use go mod download rather than -mod vendor.
+COPY go.mod go.sum ./
+RUN go mod download
+
 COPY . .
 COPY --from=spa /internal/web/build ./internal/web/build
 
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -mod vendor -tags netgo \
+    go build -tags netgo \
     -ldflags '-w -extldflags "-static"' \
     -o ./bin/hetzner-rescaler ./main.go
 
