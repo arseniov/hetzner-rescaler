@@ -15,7 +15,7 @@ import (
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 	"github.com/jonamat/hetzner-rescaler/internal/rescaler"
 	"github.com/jonamat/hetzner-rescaler/internal/store"
-	"github.com/jonamat/hetzner-rescaler/internal/web"
+
 	"github.com/spf13/cobra"
 )
 
@@ -71,16 +71,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Rescaler:      rescalerExecutor(st),
 	}
 
-	// Compose: /api/* on top of the api.NewRouter; everything else goes
-	// to the embedded SPA handler so deep-links survive a refresh.
+	// Compose: the API server only owns /api/*. The SPA is served by a
+	// separate SvelteKit adapter-node process (rescaler-web); a reverse
+	// proxy (Caddy) routes /api/auth/* → rescaler-web and the remaining
+	// /api/* → rescaler-api.
 	apiMux := api.NewRouter(deps)
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if len(r.URL.Path) >= 5 && r.URL.Path[:5] == "/api/" {
-			apiMux.ServeHTTP(w, r)
-			return
-		}
-		web.SPAHandler().ServeHTTP(w, r)
-	})
+	handler := apiMux
 
 	addr := os.Getenv("RESCALER_HTTP_ADDR")
 	if addr == "" {
