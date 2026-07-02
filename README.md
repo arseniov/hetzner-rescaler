@@ -122,8 +122,8 @@ Available Commands:
   config      Interactively add or edit projects, servers, modes, and windows (stored in SQLite)
   help        Help about any command
   migrate     Import a legacy YAML config into the SQLite database
-  serve       Run the HTTP API server (phase 2 — currently a stub)
-  start       Start the scheduler loop (reads from SQLite)
+  serve       Run the HTTP API + static SPA + scheduler (loopback)
+  start       Run the scheduler loop only (no HTTP)
   status      Print all configured projects, servers, and recent events
   try         One-shot rescale: `hetzner-rescaler try <server-id> <up|down>`
 
@@ -142,25 +142,66 @@ The SQLite database and the token-encryption key must be backed up together:
 
 If you back up the DB without the key, your Hetzner tokens are unrecoverable.
 
-## Docker
+## Web UI (phase 2)
 
-A pre-built image is published as `jonamat/hetzner-rescaler:latest` (multi-arch: amd64, arm64, armv7).
+The SvelteKit web UI is shipped as a static SPA embedded in the same Docker image. The browser talks to the Go backend over loopback HTTP using an `X-Internal-Token` shared secret; authentication for the SPA itself is delegated to a sibling [Authorizer](https://github.com/authorizerdev/authorizer) container.
+
+### Quick start with docker compose
 
 ```sh
-cp .env.example .env                       # edit values
+cp .env.example .env                       # edit values (especially RESCALER_INTERNAL_TOKEN)
 cp docker-compose.example.yml docker-compose.yml
-docker compose up -d
-docker compose exec rescaler hetzner-rescaler config   # one-time interactive setup
-docker compose logs -f rescaler
+docker compose up -d --build
 ```
 
-The container stores its SQLite DB and encryption key under `/data`, backed by a named volume (`rescaler_data`). Override behavior via `.env`:
+This brings up two services:
+- `rescaler` on http://localhost:8081 (HTTP API + SPA)
+- `authorizer` on http://localhost:8080 (admin UI; the SPA uses it for login)
 
-- `RESCALER_DB_PATH` — defaults to `/data/db.sqlite`
-- `RESCALER_TOKEN_ENCRYPTION_KEY` — hex-encoded 32-byte key; auto-generated on first run if unset (and written to `/data/key`)
-- `RESCALER_HTTP_ADDR` — loopback HTTP address (only relevant once phase 2's `serve` command is in use)
+### First-time setup
 
-The web UI (phase 2) and the Authorizer sibling container are not yet wired in this image.
+1. Visit http://localhost:8080 to open the Authorizer admin UI and create a user.
+2. Visit http://localhost:8081. You will be redirected to `/login`.
+3. Sign in with the credentials you just created.
+4. In the dashboard, click **Projects → Add project**. Enter a name and a Hetzner Cloud API token.
+5. Click **Refresh from Hetzner** to import your existing servers.
+6. Click a server, then **Rescale up / down** to test the action. Check **Events** for results.
+
+### Configuration
+
+The full set of environment variables is in `.env.example`. The two required for the web UI are:
+
+| Variable | Purpose |
+|----------|---------|
+| `RESCALER_INTERNAL_TOKEN` | Shared secret between the SPA and the Go backend. Generated once, baked into the SPA at build time. |
+| `AUTHORIZER_URL` | URL the browser uses to reach the Authorizer container. |
+| `AUTHORIZER_CLIENT_ID` | Must match the Authorizer container's `--client-id`. |
+
+### Running the SPA in development
+
+```sh
+# Terminal 1 — Go backend
+make serve-dev
+
+# Terminal 2 — SPA with HMR against the Go backend
+cd web && bun install && bun run dev
+```
+
+The Vite dev server proxies `/api/*` to `http://127.0.0.1:8080`, so login + project management work end-to-end without rebuilding the SPA.
+
+### CORS
+
+The Authorizer container's `--allowed-origins` must include the URL the browser uses to reach the rescaler (default `http://localhost:8081`). The bundled `docker-compose.example.yml` sets this. If you put the rescaler behind a reverse proxy on a different host, update `--allowed-origins` accordingly.
+
+## Docker
+
+The image runs `serve` by default (loopback HTTP + SPA + scheduler). To run the scheduler-only CLI loop (no HTTP, no UI) start the container with an explicit subcommand:
+
+```sh
+docker run -d --name rescaler -v rescaler_data:/data \
+  -e RESCALER_INTERNAL_TOKEN=changeme \
+  jonamat/hetzner-rescaler start
+```
 
 ## Use cases
 This tool was developed for a my specific use case: I use an Hetzner server for remote development, using the [Remote SSH extension](https://code.visualstudio.com/docs/remote/ssh) to simplify my cross-device development workflow. This machine also serve some personal services, which require very little resources but cannot be stopped for a long time.<br>
