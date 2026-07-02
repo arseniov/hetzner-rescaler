@@ -10,4 +10,7 @@
 .worktrees/
 
 # Local environment overrides — operators copy .env.example to .env
-.env
+.env*
+
+docker-compose.yml
+compose.yaml
