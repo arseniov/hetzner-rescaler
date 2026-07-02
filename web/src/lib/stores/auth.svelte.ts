@@ -1,59 +1,52 @@
-import { auth, type AuthSession } from '$lib/authorizer';
+import { authClient } from '$lib/auth-client';
 
-const STORAGE_KEY = 'rescaler.auth';
-
-let _session = $state<AuthSession | null>(loadInitial());
-
-function loadInitial(): AuthSession | null {
-  if (typeof localStorage === 'undefined') return null;
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return null;
-  try {
-    const s = JSON.parse(raw) as AuthSession;
-    if (s.expiresAt < Date.now()) {
-      localStorage.removeItem(STORAGE_KEY);
-      return null;
-    }
-    return s;
-  } catch {
-    return null;
-  }
+export interface SessionUser {
+  id: string;
+  email: string;
+  name: string;
 }
 
-export function session(): AuthSession | null {
-  return _session;
+// Holds the active session, hydrated by `ensureSession()` and cleared
+// by `signOut()`. Better Auth itself uses cookies — this is a cache
+// for the UI so components don't refetch on every read.
+let _user = $state<SessionUser | null>(null);
+
+export async function ensureSession(): Promise<SessionUser | null> {
+  const { data } = await authClient.getSession();
+  if (data?.user) {
+    _user = { id: data.user.id, email: data.user.email, name: data.user.name };
+  } else {
+    _user = null;
+  }
+  return _user;
+}
+
+export function currentUser(): SessionUser | null {
+  return _user;
 }
 
 export function isAuthenticated(): boolean {
-  return _session !== null && _session.expiresAt > Date.now();
+  return _user !== null;
 }
 
 export async function signIn(email: string, password: string): Promise<void> {
-  const s = await auth.login(email, password);
-  _session = s;
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
-  }
+  const { data, error } = await authClient.signIn.email({ email, password });
+  if (error) throw new Error(error.message ?? 'sign-in failed');
+  if (!data?.user) throw new Error('sign-in returned no user');
+  _user = { id: data.user.id, email: data.user.email, name: data.user.name };
 }
 
-export async function signUp(email: string, password: string): Promise<void> {
-  const s = await auth.signup(email, password);
-  _session = s;
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
-  }
+export async function signUp(email: string, password: string, name: string): Promise<void> {
+  const { data, error } = await authClient.signUp.email({ email, password, name });
+  if (error) throw new Error(error.message ?? 'sign-up failed');
+  if (!data?.user) throw new Error('sign-up returned no user');
+  _user = { id: data.user.id, email: data.user.email, name: data.user.name };
 }
 
 export async function signOut(): Promise<void> {
-  if (_session) {
-    try {
-      await auth.logout(_session.token);
-    } catch {
-      /* ignore */
-    }
-  }
-  _session = null;
-  if (typeof localStorage !== 'undefined') {
-    localStorage.removeItem(STORAGE_KEY);
+  try {
+    await authClient.signOut();
+  } finally {
+    _user = null;
   }
 }
