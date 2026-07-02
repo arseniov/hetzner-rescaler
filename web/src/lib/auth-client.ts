@@ -1,9 +1,9 @@
 import { createAuthClient } from 'better-auth/svelte';
 
-// The baseURL here matches BETTER_AUTH_URL — the origin the browser sees
-// after the reverse proxy. The client posts to /api/auth/* relative
-// paths, which SvelteKit's hooks.server.ts dispatches into the Better
-// Auth handler.
+// Empty client config is intentional: BETTER_AUTH_URL and trusted origins
+// are configured server-side in src/lib/server/auth.ts, and routing is
+// mounted in src/hooks.server.ts via svelteKitHandler. The client just
+// posts to whatever /api/auth/* SvelteKit dispatches.
 export const authClient = createAuthClient({});
 
 export type AuthClient = typeof authClient;
