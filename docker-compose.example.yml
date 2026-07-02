@@ -1,29 +1,52 @@
-# Minimal phase-1 deployment.
-#
-# Usage:
-#   cp .env.example .env          # edit values
-#   cp docker-compose.example.yml docker-compose.yml
-#   docker compose up -d
-#   docker compose exec rescaler hetzner-rescaler config   # interactive setup
-#   docker compose logs -f rescaler
-#
-# Phase 2 will add the `authorizer` service here.
+version: "3.8"
 
 services:
   rescaler:
+    build:
+      context: .
+      args:
+        # The SPA reads these at build time. They MUST match the values
+        # the operator puts in their .env at runtime.
+        PUBLIC_INTERNAL_TOKEN: ${RESCALER_INTERNAL_TOKEN:?set this}
+        PUBLIC_AUTHORIZER_URL: ${AUTHORIZER_URL:-http://localhost:8080}
     image: jonamat/hetzner-rescaler:latest
     restart: unless-stopped
-    env_file:
-      - .env
+    ports:
+      # Loopback only — operators put a reverse proxy in front for remote access.
+      - "127.0.0.1:8081:8080"
     environment:
-      # Pin the DB and key into the named volume regardless of operator .env.
-      RESCALER_DB_PATH: /data/db.sqlite
+      RESCALER_INTERNAL_TOKEN: ${RESCALER_INTERNAL_TOKEN:?set this}
+      RESCALER_TOKEN_ENCRYPTION_KEY: ${RESCALER_TOKEN_ENCRYPTION_KEY:-}
+      RESCALER_HTTP_ADDR: "127.0.0.1:8080"
+      AUTHORIZER_URL: "http://authorizer:8080"
+      AUTHORIZER_CLIENT_ID: ${AUTHORIZER_CLIENT_ID}
     volumes:
       - rescaler_data:/data
-    # Phase 1 runs the scheduler in the foreground. For phase 2 we'll add
-    # `127.0.0.1:8080:8080` to expose the embedded web UI on loopback.
-    # ports:
-    #   - "127.0.0.1:8080:8080"
+    depends_on:
+      - authorizer
+
+  authorizer:
+    image: quay.io/authorizer/authorizer:latest
+    restart: unless-stopped
+    ports:
+      # Admin UI on loopback. The browser hits this directly for login.
+      - "127.0.0.1:8080:8080"
+    environment:
+      DATABASE_TYPE: "sqlite"
+      DATABASE_URL: "/data/test.db"
+    command:
+      - "--database-type=sqlite"
+      - "--database-url=/data/test.db"
+      - "--jwt-type=HS256"
+      - "--jwt-secret=${AUTHORIZER_JWT_SECRET:?set this}"
+      - "--admin-secret=${AUTHORIZER_ADMIN_SECRET:?set this}"
+      - "--client-id=${AUTHORIZER_CLIENT_ID:?set this}"
+      - "--client-secret=${AUTHORIZER_CLIENT_SECRET:?set this}"
+      # Allow the SPA's origin (host-mapped localhost:8081) to call Authorizer.
+      - "--allowed-origins=http://localhost:8081"
+    volumes:
+      - authorizer_data:/data
 
 volumes:
   rescaler_data:
+  authorizer_data:
