@@ -1,21 +1,15 @@
-import adapter from '@sveltejs/adapter-static';
+import adapter from '@sveltejs/adapter-node';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const buildDir = path.resolve(__dirname, '..', 'internal', 'web', 'build');
 
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
   preprocess: vitePreprocess(),
   kit: {
     adapter: adapter({
-      pages: buildDir,
-      assets: buildDir,
-      fallback: 'index.html',
+      // adapter-node emits a build/ directory runnable via `node build`.
+      out: 'build',
       precompress: false,
-      strict: true
+      envPrefix: ''
     }),
     alias: { $lib: 'src/lib' },
     prerender: {
