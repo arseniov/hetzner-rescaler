@@ -33,7 +33,9 @@
 
   onMount(refresh);
 
-  $effect(() => { serverFilter; kindFilter; limit; refresh(); });
+  // Re-fetch when server or limit changes. kindFilter is purely client-side
+  // (filtered via $derived below), so it does not need to trigger a refresh.
+  $effect(() => { serverFilter; limit; refresh(); });
 
   let filtered = $derived(
     kindFilter ? events.filter((e) => e.kind.includes(kindFilter)) : events

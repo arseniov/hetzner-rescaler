@@ -183,8 +183,11 @@ The full set of environment variables is in `.env.example`. The two required for
 # Terminal 1 — Go backend
 make serve-dev
 
-# Terminal 2 — SPA with HMR against the Go backend
-cd web && bun install && bun run dev
+# Terminal 2 — SPA with HMR against the Go backend.
+# PUBLIC_INTERNAL_TOKEN must match the value used by `make serve-dev`
+# (RESCALER_INTERNAL_TOKEN=dev-token), otherwise /api/* calls return 401.
+cd web
+PUBLIC_INTERNAL_TOKEN=dev-token bun run dev
 ```
 
 The Vite dev server proxies `/api/*` to `http://127.0.0.1:8080`, so login + project management work end-to-end without rebuilding the SPA.
