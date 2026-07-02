@@ -42,3 +42,33 @@ test-engine:
 build-spa:
 	cd web && bun install && bun run build
 	cp -R web/build ./web_build_artifact
+
+# Phase 2: build the SPA first, then embed it in the Go binary.
+# `bun run build` requires `bun install` to have been run at least once;
+# the web-deps / web-build targets below handle that.
+#
+# Note: this project does NOT vendor dependencies (vendor/ is gitignored),
+# so we do not pass -mod vendor to go build. The module cache is used
+# directly; run `go mod download` manually if modules are missing.
+
+.PHONY: web-deps web-build serve-dev
+
+web-deps:
+	cd web && bun install
+
+web-build: web-deps
+	cd web && bun run build
+
+build: web-build
+	CGO_ENABLED=0 GOOS=$$(go env GOOS) GOARCH=$$(go env GOARCH) \
+	  go build -tags netgo \
+	  -ldflags '-w -extldflags "-static"' \
+	  -o ./bin/hetzner-rescaler ./main.go
+
+# Run the embedded Go binary against a local DB and loopback HTTP.
+# Requires `web/build/` to exist (run `make build` first).
+serve-dev:
+	RESCALER_DB_PATH=$$HOME/.hetzner-rescaler/dev.db \
+	RESCALER_INTERNAL_TOKEN=dev-token \
+	RESCALER_HTTP_ADDR=127.0.0.1:8080 \
+	./bin/hetzner-rescaler serve
