@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { signIn, signUp, isAuthenticated } from '$lib/stores/auth.svelte';
+  import { signIn, signUp, isAuthenticated, ensureSession } from '$lib/stores/auth.svelte';
   import { goto } from '$app/navigation';
+  import { onMount } from 'svelte';
   import Button from '$lib/components/ui/button.svelte';
   import Input from '$lib/components/ui/input.svelte';
   import Alert from '$lib/components/ui/alert.svelte';
@@ -8,11 +9,14 @@
   let mode = $state<'login' | 'signup'>('login');
   let email = $state('');
   let password = $state('');
+  let name = $state('');
   let error = $state<string | null>(null);
   let submitting = $state(false);
 
-  // If already authenticated, bounce to dashboard.
-  $effect(() => {
+  onMount(async () => {
+    // If a session cookie is already present, hydrate the store and
+    // bounce to the dashboard before the form even renders.
+    await ensureSession();
     if (isAuthenticated()) goto('/');
   });
 
@@ -21,8 +25,11 @@
     error = null;
     submitting = true;
     try {
-      if (mode === 'login') await signIn(email, password);
-      else await signUp(email, password);
+      if (mode === 'login') {
+        await signIn(email, password);
+      } else {
+        await signUp(email, password, name.trim() || email.split('@')[0]);
+      }
       await goto('/');
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -40,6 +47,13 @@
 
     {#if error}
       <Alert variant="destructive">{error}</Alert>
+    {/if}
+
+    {#if mode === 'signup'}
+      <label class="block text-sm">
+        Display name
+        <Input bind:value={name} autocomplete="name" class="mt-1" placeholder="optional" />
+      </label>
     {/if}
 
     <label class="block text-sm">

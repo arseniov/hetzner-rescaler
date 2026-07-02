@@ -1,18 +1,20 @@
 <script lang="ts">
   import '../app.css';
   import { onNavigate } from '$app/navigation';
-  import { isAuthenticated } from '$lib/stores/auth.svelte';
+  import { isAuthenticated, ensureSession } from '$lib/stores/auth.svelte';
   import Nav from '$lib/components/Nav.svelte';
 
   let { children } = $props();
 
-  // Client-side route guard: redirect to /login if not authenticated.
-  // /login is the only public route.
-  onNavigate((nav) => {
+  // Hydrate from the session cookie on the first navigation so the
+  // guard below has reliable state.
+  onNavigate(async (nav) => {
     if (typeof window === 'undefined') return;
-    if (!isAuthenticated() && nav.to?.route.id !== '/login') {
-      // SvelteKit will navigate; we use replaceState so the back button
-      // doesn't trap the user on /login after they sign in.
+    if (nav.to?.route.id === '/login' || nav.to?.route.id === null) return;
+    await ensureSession();
+    if (!isAuthenticated()) {
+      // replaceState so the back button doesn't trap the user on /login
+      // after they sign in.
       window.location.replace('/login');
     }
   });
