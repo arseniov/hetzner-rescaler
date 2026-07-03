@@ -152,10 +152,9 @@ The SvelteKit web UI runs as a separate Node service in the same Docker stack. T
 cp .env.example .env                       # edit values (especially RESCALER_INTERNAL_TOKEN, BETTER_AUTH_SECRET)
 cp docker-compose.example.yml docker-compose.yml
 docker compose up -d --build
-# One-shot: apply the Better Auth schema (user, session, account, verification tables).
-# The runtime image is Node-based and ships drizzle-kit + the Drizzle config, so
-# use `npx drizzle-kit migrate` (not `bun run db:migrate`, which only works locally).
-docker compose exec rescaler-web npx drizzle-kit migrate
+# The rescaler-web container applies Better Auth's Drizzle migrations
+# (user / session / account / verification tables) automatically on
+# every start — see `web/Dockerfile`'s `CMD`. Nothing to run by hand.
 ```
 
 This brings up three services:

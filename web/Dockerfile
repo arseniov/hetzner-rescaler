@@ -43,5 +43,11 @@ COPY web/drizzle.config.ts ./drizzle.config.ts
 
 EXPOSE 3000
 
-# node build/ runs the adapter-node server. SvelteKit honours PORT/HOST.
-CMD ["node", "build"]
+# Run Drizzle migrations on every container start before launching the
+# SvelteKit server. drizzle-kit's `migrate` command is idempotent — it
+# tracks applied migrations in `__drizzle_migrations` and skips ones
+# already applied, so this is safe to run on every boot, not just
+# first-time setup. `&&` ensures the server only starts if migrations
+# succeed (a failed migration will exit non-zero and Docker will
+# restart the container, surfacing the error in `docker compose logs`).
+CMD ["sh", "-c", "npm run db:migrate && node build"]
