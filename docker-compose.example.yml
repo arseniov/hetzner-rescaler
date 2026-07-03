@@ -10,7 +10,7 @@ services:
     ports:
       # Single public entrypoint. Caddy routes to rescaler-api and
       # rescaler-web by path.
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8085:8080"
     depends_on:
       - rescaler-api
       - rescaler-web
@@ -46,7 +46,12 @@ services:
     environment:
       DATABASE_URL: /data/db.sqlite
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set this}
-      BETTER_AUTH_URL: http://localhost:8080
+      BETTER_AUTH_URL: http://localhost:8085
+      # ORIGIN tells adapter-node what to use as the request origin.
+      # Without it, adapter-node defaults to `https://${Host}` and
+      # Better Auth's `isAuthPath` check rejects every request because
+      # `_url.origin !== baseURL.origin`. Must match BETTER_AUTH_URL.
+      ORIGIN: http://localhost:8085
       PUBLIC_INTERNAL_TOKEN: ${RESCALER_INTERNAL_TOKEN:?set this}
     volumes:
       - rescaler_data:/data    # shares the SQLite file with rescaler-api
