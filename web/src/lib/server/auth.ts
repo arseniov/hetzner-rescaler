@@ -37,11 +37,10 @@ export const auth = betterAuth({
     // the request is https) are fine for our same-origin setup.
     expiresIn: 60 * 60 * 24 * 7, // 7 days
     updateAge: 60 * 60 * 24 // refresh once per day
-  },
-  advanced: {
-    // Default cookie name `better-auth.session_token` is fine; we never
-    // read it client-side.
   }
+  // Default cookie name `better-auth.session_token` is fine; we never
+  // read it client-side, so we leave Better Auth's advanced cookie defaults
+  // in place rather than overriding them here.
 });
 
 export type Auth = typeof auth;
