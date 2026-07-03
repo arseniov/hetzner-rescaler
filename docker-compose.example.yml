@@ -1,0 +1,29 @@
+# Minimal phase-1 deployment.
+#
+# Usage:
+#   cp .env.example .env          # edit values
+#   cp docker-compose.example.yml docker-compose.yml
+#   docker compose up -d
+#   docker compose exec rescaler hetzner-rescaler config   # interactive setup
+#   docker compose logs -f rescaler
+#
+# Phase 2 will add the `authorizer` service here.
+
+services:
+  rescaler:
+    image: jonamat/hetzner-rescaler:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Pin the DB and key into the named volume regardless of operator .env.
+      RESCALER_DB_PATH: /data/db.sqlite
+    volumes:
+      - rescaler_data:/data
+    # Phase 1 runs the scheduler in the foreground. For phase 2 we'll add
+    # `127.0.0.1:8080:8080` to expose the embedded web UI on loopback.
+    # ports:
+    #   - "127.0.0.1:8080:8080"
+
+volumes:
+  rescaler_data:
