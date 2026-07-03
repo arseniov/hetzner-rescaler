@@ -1,29 +1,58 @@
-# Minimal phase-1 deployment.
-#
-# Usage:
-#   cp .env.example .env          # edit values
-#   cp docker-compose.example.yml docker-compose.yml
-#   docker compose up -d
-#   docker compose exec rescaler hetzner-rescaler config   # interactive setup
-#   docker compose logs -f rescaler
-#
-# Phase 2 will add the `authorizer` service here.
+version: "3.8"
 
 services:
-  rescaler:
+  caddy:
+    build:
+      context: .
+      dockerfile: caddy/Dockerfile
+    image: jonamat/hetzner-rescaler-caddy:latest
+    restart: unless-stopped
+    ports:
+      # Single public entrypoint. Caddy routes to rescaler-api and
+      # rescaler-web by path.
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - rescaler-api
+      - rescaler-web
+
+  rescaler-api:
+    build:
+      context: .
     image: jonamat/hetzner-rescaler:latest
     restart: unless-stopped
-    env_file:
-      - .env
+    # Internal-only: Caddy talks to us. Loopback binding still works
+    # because the caddy container sees this network address.
+    expose:
+      - "8080"
     environment:
-      # Pin the DB and key into the named volume regardless of operator .env.
-      RESCALER_DB_PATH: /data/db.sqlite
+      RESCALER_INTERNAL_TOKEN: ${RESCALER_INTERNAL_TOKEN:?set this}
+      RESCALER_TOKEN_ENCRYPTION_KEY: ${RESCALER_TOKEN_ENCRYPTION_KEY:-}
+      RESCALER_HTTP_ADDR: "0.0.0.0:8080"
     volumes:
       - rescaler_data:/data
-    # Phase 1 runs the scheduler in the foreground. For phase 2 we'll add
-    # `127.0.0.1:8080:8080` to expose the embedded web UI on loopback.
-    # ports:
-    #   - "127.0.0.1:8080:8080"
+
+  rescaler-web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        PUBLIC_INTERNAL_TOKEN: ${RESCALER_INTERNAL_TOKEN:?set this}
+    image: jonamat/hetzner-rescaler-web:latest
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      DATABASE_URL: /data/db.sqlite
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set this}
+      BETTER_AUTH_URL: http://localhost:8080
+      # ORIGIN tells adapter-node what to use as the request origin.
+      # Without it, adapter-node defaults to `https://${Host}` and
+      # Better Auth's `isAuthPath` check rejects every request because
+      # `_url.origin !== baseURL.origin`. Must match BETTER_AUTH_URL.
+      ORIGIN: http://localhost:8080
+      PUBLIC_INTERNAL_TOKEN: ${RESCALER_INTERNAL_TOKEN:?set this}
+    volumes:
+      - rescaler_data:/data    # shares the SQLite file with rescaler-api
 
 volumes:
   rescaler_data:

@@ -74,6 +74,18 @@ func (s *Store) GetServer(id int64) (*Server, error) {
 	return scanServer(row)
 }
 
+// GetServerByHCloudID returns the server within a project that matches
+// the given Hetzner Cloud numeric ID. Returns ErrNotFound if no row
+// matches; the (project_id, hcloud_server_id) UNIQUE constraint makes
+// this lookup unambiguous.
+func (s *Store) GetServerByHCloudID(projectID int64, hcloudID int) (*Server, error) {
+	row := s.db.QueryRow(
+		`SELECT `+serverCols+` FROM servers WHERE project_id = ? AND hcloud_server_id = ?`,
+		projectID, hcloudID,
+	)
+	return scanServer(row)
+}
+
 func (s *Store) ListServersByProject(projectID int64) ([]*Server, error) {
 	rows, err := s.db.Query(`SELECT ` + serverCols + ` FROM servers WHERE project_id = ? ORDER BY id`, projectID)
 	if err != nil {
@@ -215,4 +227,27 @@ func (s *Store) ListWindows(serverID int64) ([]*Window, error) {
 func (s *Store) DeleteWindow(id int64) error {
 	_, err := s.db.Exec(`DELETE FROM windows WHERE id = ?`, id)
 	return err
+}
+
+// UpdateWindow updates a window's mutable fields. Returns ErrNotFound
+// when no window with the given id exists.
+func (s *Store) UpdateWindow(id int64, w Window) (*Window, error) {
+	enabled := 0
+	if w.Enabled {
+		enabled = 1
+	}
+	res, err := s.db.Exec(
+		`UPDATE windows SET label=?, days_of_week=?, start_time=?, stop_time=?, target_type=?, enabled=?
+		 WHERE id=?`,
+		w.Label, w.DaysOfWeek, w.StartTime, w.StopTime, w.TargetType, enabled, id,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: update window: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return nil, ErrNotFound
+	}
+	w.ID = id
+	return &w, nil
 }

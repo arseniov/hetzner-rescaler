@@ -10,4 +10,10 @@
 .worktrees/
 
 # Local environment overrides — operators copy .env.example to .env
-.env
+.env*
+
+docker-compose.yml
+compose.yaml
+
+# SvelteKit adapter-node build output (built in web/, served by rescaler-web).
+web/build/

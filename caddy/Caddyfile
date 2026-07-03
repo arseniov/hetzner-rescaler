@@ -1,0 +1,42 @@
+{
+  auto_https off
+  admin off
+}
+
+:8080 {
+  # Long-lived reverse proxy: SvelteKit can take a second to JIT-import
+  # Better Auth routes on first hit.
+  #
+  # `header_up Host {host}` forwards the browser's Host header
+  # (`localhost:8089` here) instead of replacing it with the upstream's
+  # hostname (`rescaler-web`). SvelteKit reconstructs `event.url` from
+  # `Host`, and Better Auth's `isAuthPath` check requires
+  # `_url.origin === baseURL.origin`. Without this, every /api/auth/*
+  # request 404s because the origins don't match.
+  @auth path /api/auth/* /api/auth
+  handle @auth {
+    reverse_proxy rescaler-web:3000 {
+      header_up Host {host}
+      transport http {
+        keepalive 30s
+      }
+    }
+  }
+
+  # /api/* (everything except /api/auth/*) goes to the Go backend.
+  handle /api/* {
+    reverse_proxy rescaler-api:8080 {
+      header_up Host {host}
+    }
+  }
+
+  # Everything else: the SPA. The browser's cookie (set by Better Auth)
+  # is sent on this origin, so we must keep Host consistent here too.
+  handle /* {
+    reverse_proxy rescaler-web:3000 {
+      header_up Host {host}
+    }
+  }
+
+  log
+}
