@@ -144,38 +144,41 @@ If you back up the DB without the key, your Hetzner tokens are unrecoverable.
 
 ## Web UI (phase 2)
 
-The SvelteKit web UI is shipped as a static SPA embedded in the same Docker image. The browser talks to the Go backend over loopback HTTP using an `X-Internal-Token` shared secret; authentication for the SPA itself is delegated to a sibling [Authorizer](https://github.com/authorizerdev/authorizer) container.
+The SvelteKit web UI runs as a separate Node service in the same Docker stack. The browser talks to the Go backend over loopback HTTP using an `X-Internal-Token` shared secret; user authentication for the SPA itself is handled by [Better Auth](https://www.better-auth.com/) running inside the same stack on the SvelteKit service. A Caddy reverse proxy fronts both services on a single port so the browser sees one origin.
 
 ### Quick start with docker compose
 
 ```sh
-cp .env.example .env                       # edit values (especially RESCALER_INTERNAL_TOKEN)
+cp .env.example .env                       # edit values (especially RESCALER_INTERNAL_TOKEN, BETTER_AUTH_SECRET)
 cp docker-compose.example.yml docker-compose.yml
 docker compose up -d --build
+# One-shot: apply the Better Auth schema (user, session, account, verification tables)
+docker compose exec rescaler-web bun run db:migrate
 ```
 
-This brings up two services:
-- `rescaler` on http://localhost:8081 (HTTP API + SPA)
-- `authorizer` on http://localhost:8080 (admin UI; the SPA uses it for login)
+This brings up three services:
+- `caddy` on http://localhost:8080 (public entrypoint; reverse-proxy to rescaler-api and rescaler-web)
+- `rescaler-api` on `rescaler-api:8080` (internal; serves `/api/*`)
+- `rescaler-web` on `rescaler-web:3000` (internal; serves the SPA + Better Auth at `/api/auth/*`)
 
 ### First-time setup
 
-1. Visit http://localhost:8080 to open the Authorizer admin UI and create a user.
-2. Visit http://localhost:8081. You will be redirected to `/login`.
-3. Sign in with the credentials you just created.
-4. In the dashboard, click **Projects → Add project**. Enter a name and a Hetzner Cloud API token.
-5. Click **Refresh from Hetzner** to import your existing servers.
-6. Click a server, then **Rescale up / down** to test the action. Check **Events** for results.
+1. Visit http://localhost:8080 — the login page accepts sign-up. The first
+   account you create becomes the only admin (Better Auth single-tenant mode).
+2. In the dashboard, click **Projects → Add project**. Enter a name and a Hetzner Cloud API token.
+3. Click **Refresh from Hetzner** to import your existing servers.
+4. Click a server, then **Rescale up / down** to test the action. Check **Events** for results.
 
 ### Configuration
 
-The full set of environment variables is in `.env.example`. The two required for the web UI are:
+The full set of environment variables is in `.env.example`. The ones specific to the web UI are:
 
 | Variable | Purpose |
 |----------|---------|
 | `RESCALER_INTERNAL_TOKEN` | Shared secret between the SPA and the Go backend. Generated once, baked into the SPA at build time. |
-| `AUTHORIZER_URL` | URL the browser uses to reach the Authorizer container. |
-| `AUTHORIZER_CLIENT_ID` | Must match the Authorizer container's `--client-id`. |
+| `BETTER_AUTH_SECRET` | Shared secret for signing Better Auth session tokens. At least 32 characters. |
+| `BETTER_AUTH_URL` | Public origin the browser uses to reach the stack. Caddy listens here; Better Auth uses it for cookie scoping. |
+| `DATABASE_URL` | Path to the SQLite file Better Auth shares with `rescaler-api`. Inside the bundled compose this is the shared volume mount. |
 
 ### Running the SPA in development
 
@@ -190,11 +193,7 @@ cd web
 PUBLIC_INTERNAL_TOKEN=dev-token bun run dev
 ```
 
-The Vite dev server proxies `/api/*` to `http://127.0.0.1:8080`, so login + project management work end-to-end without rebuilding the SPA.
-
-### CORS
-
-The Authorizer container's `--allowed-origins` must include the URL the browser uses to reach the rescaler (default `http://localhost:8081`). The bundled `docker-compose.example.yml` sets this. If you put the rescaler behind a reverse proxy on a different host, update `--allowed-origins` accordingly.
+The Vite dev server proxies `/api/*` (except `/api/auth/*`) to `http://127.0.0.1:8080`, so login + project management work end-to-end without rebuilding the SPA. Better Auth's `/api/auth/*` calls are handled inside SvelteKit (the Vite config carves them out of the Go proxy).
 
 ## Docker
 
