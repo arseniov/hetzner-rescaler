@@ -1,0 +1,27 @@
+{
+  auto_https off
+  admin off
+}
+
+:8080 {
+  # Long-lived reverse proxy: SvelteKit can take a second to JIT-import
+  # Better Auth routes on first hit.
+  @auth path /api/auth/* /api/auth
+  handle @auth {
+    reverse_proxy rescaler-web:3000 {
+      transport http {
+        keepalive 30s
+      }
+    }
+  }
+
+  handle /api/* {
+    reverse_proxy rescaler-api:8080
+  }
+
+  handle /* {
+    reverse_proxy rescaler-web:3000
+  }
+
+  log
+}
