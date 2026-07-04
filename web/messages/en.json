@@ -79,5 +79,18 @@
   "server_detail_windows_count": "Existing windows ({count})",
   "server_detail_window_enabled": "Enabled",
   "server_detail_window_disabled": "Disabled",
-  "server_detail_window_every_day": "Every day"
+  "server_detail_window_every_day": "Every day",
+  "server_edit_title": "Edit server",
+  "server_edit_save": "Save",
+  "server_edit_saving": "Saving…",
+  "server_edit_cancel": "Cancel",
+  "server_edit_field_name": "Name",
+  "server_edit_field_label": "Label",
+  "server_edit_field_base": "Base server type",
+  "server_edit_field_top": "Top server type",
+  "server_edit_field_fallback": "Fallback chain (comma-separated, top first)",
+  "server_edit_field_fallback_placeholder": "cpx31, cpx21, cpx11",
+  "server_edit_field_mode": "Mode",
+  "server_edit_field_timezone": "Timezone (IANA)",
+  "server_edit_field_timezone_placeholder": "Europe/Rome"
 }
