@@ -4,3 +4,7 @@ build
 .env
 .env.*
 !.env.example
+
+# Paraglide JS generated output (compiled from project.inlang/ + messages/)
+src/lib/paraglide/
+package-lock.json
