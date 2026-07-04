@@ -9,5 +9,7 @@
   "sidebar_projects": "Projects",
   "sidebar_servers": "Servers (registered)",
   "sidebar_events": "Events",
-  "sidebar_signout": "Sign out"
+  "sidebar_signout": "Sign out",
+  "theme_toggle_light": "Switch to light mode",
+  "theme_toggle_dark": "Switch to dark mode"
 }

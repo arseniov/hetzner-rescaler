@@ -4,6 +4,7 @@
   import { m } from '$lib/paraglide/messages.js';
   import { isAuthenticated, signOut } from '$lib/stores/auth.svelte';
   import { goto } from '$app/navigation';
+  import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 
   async function handleSignOut() {
     await signOut();
@@ -50,16 +51,14 @@
       <SidebarItem href="/events" label={m.sidebar_events()} active={isActive('/events')} />
     </ul>
 
-    <div class="mt-auto p-4 border-t border-gray-200 dark:border-gray-700">
-      {#if isAuthenticated()}
-        <button
-          type="button"
-          class="text-sm text-gray-700 hover:underline dark:text-gray-200"
-          onclick={handleSignOut}
-        >
-          {m.sidebar_signout()}
-        </button>
-      {/if}
+    <div class="mt-auto p-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
+      <ThemeToggle />
+      <button
+        class="text-sm text-gray-700 dark:text-gray-200 hover:underline"
+        onclick={handleSignOut}
+      >
+        {m.sidebar_signout()}
+      </button>
     </div>
   </SidebarWrapper>
 </Sidebar>
