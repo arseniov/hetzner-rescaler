@@ -27,6 +27,13 @@ func (s *Store) SetBroadcastHub(hub *broadcast.Hub[Event]) {
 	s.hub = hub
 }
 
+// EventHub returns the broadcast hub attached via SetBroadcastHub, or nil
+// if none has been attached. SSE handlers and other in-process subscribers
+// use this to receive live events as they are inserted.
+func (s *Store) EventHub() *broadcast.Hub[Event] {
+	return s.hub
+}
+
 // Open opens (or creates) the database at path and runs all migrations.
 func Open(path string) (*Store, error) {
 	db, err := sql.Open("sqlite", path+"?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)")
