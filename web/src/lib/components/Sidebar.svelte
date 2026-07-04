@@ -3,10 +3,14 @@
   import { Sidebar, SidebarGroup, SidebarItem, SidebarWrapper } from 'flowbite-svelte';
   import { m } from '$lib/paraglide/messages.js';
   import { isAuthenticated, signOut } from '$lib/stores/auth.svelte';
+  import { eventsStream } from '$lib/stores/eventsStream.svelte';
   import { goto } from '$app/navigation';
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 
   async function handleSignOut() {
+    // Close the SSE connection before clearing the auth session so we
+    // don't keep the EventSource attached across the logout boundary.
+    eventsStream.disconnect();
     await signOut();
     await goto('/login');
   }

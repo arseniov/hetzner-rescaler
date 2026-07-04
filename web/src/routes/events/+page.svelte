@@ -4,45 +4,43 @@
   import EventList from '$lib/components/EventList.svelte';
   import { m } from '$lib/paraglide/messages.js';
   import { api } from '$lib/api';
+  import { eventsStream } from '$lib/stores/eventsStream.svelte';
   import type { RescaleEvent, Server } from '$lib/types';
 
   let servers = $state<Server[]>([]);
-  let events = $state<RescaleEvent[]>([]);
+  // Live events stream — read from the SSE-backed store. The store is
+  // process-wide (seeded by the Dashboard's initial REST fetch) and
+  // fills in with new events as they arrive. The server-id filter and
+  // kind filter below are applied client-side only.
+  let events = $derived(eventsStream.events);
   let error = $state<string | null>(null);
   let loading = $state(true);
 
   let serverFilter = $state<number | ''>('');
   let kindFilter = $state<string>('');
-  let limit = $state(50);
 
-  async function refresh() {
-    loading = true;
-    error = null;
+  onMount(async () => {
     try {
-      if (!servers.length) servers = await api.listServers();
-      events = await api.globalEvents({
-        serverId: serverFilter === '' ? undefined : Number(serverFilter),
-        limit
-      });
+      // Fetch the server list for the filter dropdown, and seed the
+      // SSE store with a recent snapshot if it doesn't already have
+      // anything. This keeps direct-navigation to /events working
+      // when the user hasn't visited the Dashboard first.
+      const [s, e] = await Promise.all([api.listServers(), api.globalEvents({ limit: 50 })]);
+      servers = s;
+      if (eventsStream.events.length === 0) {
+        eventsStream.replaceAll(e);
+      }
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
       loading = false;
     }
-  }
-
-  onMount(refresh);
-
-  // Re-fetch when server or limit changes. kindFilter is purely client-side
-  // (filtered via $derived below), so it does not need to trigger a refresh.
-  $effect(() => {
-    serverFilter;
-    limit;
-    refresh();
   });
 
   let filtered = $derived(
-    kindFilter ? events.filter((e) => e.kind.includes(kindFilter)) : events
+    events
+      .filter((e) => serverFilter === '' || e.server_id === Number(serverFilter))
+      .filter((e) => !kindFilter || e.kind.includes(kindFilter))
   );
 
   const kinds = [
@@ -61,7 +59,7 @@
   {#if error}<Alert color="danger">{error}</Alert>{/if}
 
   <Card>
-    <div class="grid gap-3 sm:grid-cols-3">
+    <div class="grid gap-3 sm:grid-cols-2">
       <Label>
         {m.events_filter_server()}
         <Select bind:value={serverFilter} class="mt-1">
@@ -79,10 +77,6 @@
             <option value={k}>{k}</option>
           {/each}
         </Select>
-      </Label>
-      <Label>
-        {m.events_filter_limit()}
-        <Input type="number" bind:value={limit} min={1} max={500} class="mt-1" />
       </Label>
     </div>
   </Card>

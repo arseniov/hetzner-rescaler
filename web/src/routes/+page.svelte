@@ -3,13 +3,16 @@
   import { Card, Alert } from 'flowbite-svelte';
   import { api } from '$lib/api';
   import { m } from '$lib/paraglide/messages.js';
+  import { eventsStream } from '$lib/stores/eventsStream.svelte';
   import type { Project, Server, RescaleEvent } from '$lib/types';
   import EventList from '$lib/components/EventList.svelte';
   import ServerCard from '$lib/components/ServerCard.svelte';
 
   let projects = $state<Project[]>([]);
   let servers = $state<Server[]>([]);
-  let events = $state<RescaleEvent[]>([]);
+  // Live events stream (REST seed + SSE updates). New events from the
+  // SSE store are prepended to this array automatically.
+  let events = $derived(eventsStream.events);
   let error = $state<string | null>(null);
   let loading = $state(true);
 
@@ -22,7 +25,10 @@
       ]);
       projects = p;
       servers = s;
-      events = e;
+      // Seed the SSE store with the initial REST snapshot so other pages
+      // (e.g. /events) that read from `eventsStream.events` see the same
+      // context.
+      eventsStream.replaceAll(e);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
