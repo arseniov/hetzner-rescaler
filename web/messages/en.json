@@ -44,5 +44,15 @@
   "project_detail_add_submit": "Add server",
   "project_detail_add_hint": "Default base/top types are filled in. Edit them on the server detail page.",
   "project_detail_servers_title": "Servers ({count})",
-  "project_detail_servers_empty": "No servers registered."
+  "project_detail_servers_empty": "No servers registered.",
+  "servers_title": "Servers",
+  "servers_empty": "No servers registered.",
+  "servers_col_name": "Name",
+  "servers_col_project": "Project",
+  "servers_col_types": "Base → Top",
+  "servers_col_mode": "Mode",
+  "servers_col_status": "Status",
+  "servers_mode_manual": "Manual",
+  "servers_mode_auto_promote": "Auto-promote",
+  "servers_mode_scheduled": "Scheduled"
 }

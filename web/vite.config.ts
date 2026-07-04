@@ -1,6 +1,7 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
+import { svelteTesting } from '@testing-library/svelte/vite';
 
 export default defineConfig({
   plugins: [
@@ -8,6 +9,7 @@ export default defineConfig({
       project: './project.inlang',
       outdir: './src/lib/paraglide'
     }),
+    svelteTesting(),
     sveltekit()
   ],
   server: {
@@ -29,6 +31,8 @@ export default defineConfig({
     }
   },
   test: {
-    include: ['src/**/*.{test,spec}.{js,ts}']
+    include: ['src/**/*.{test,spec}.{js,ts}'],
+    environment: 'jsdom',
+    setupFiles: ['./vitest.setup.ts']
   }
 });
