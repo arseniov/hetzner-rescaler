@@ -1,7 +1,14 @@
 // Read the internal token at call time so tests using vi.stubEnv can
-// override it. Vite inlines import.meta.env.PUBLIC_* at build time.
+// override it. SvelteKit 2 only inlines `import.meta.env.PUBLIC_*` at
+// build time when explicit env declarations are configured; otherwise
+// the access resolves to undefined and Rollup tree-shakes any
+// conditional on it. The runtime container has PUBLIC_INTERNAL_TOKEN
+// set in process.env, which SvelteKit exposes via $env/dynamic/public.
+// We prefer that (static-safe) and fall back to import.meta.env so
+// vi.stubEnv still works in tests.
+import { env } from '$env/dynamic/public';
 function getInternalToken(): string | undefined {
-  return import.meta.env.PUBLIC_INTERNAL_TOKEN as string | undefined;
+  return (env.PUBLIC_INTERNAL_TOKEN ?? import.meta.env.PUBLIC_INTERNAL_TOKEN) as string | undefined;
 }
 
 export class ApiError extends Error {
