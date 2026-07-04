@@ -30,5 +30,19 @@
   "projects_new_submit": "Create project",
   "projects_delete_confirm": "Delete project and all its servers?",
   "projects_delete_submit": "Delete",
-  "projects_last_error": "Last error"
+  "projects_last_error": "Last error",
+  "project_detail_title": "Project",
+  "project_detail_back": "Back to projects",
+  "project_detail_loading": "Loading…",
+  "project_detail_not_found": "Project not found.",
+  "project_detail_token_stored": "token stored",
+  "project_detail_token_missing": "missing",
+  "project_detail_created_at": "created {date}",
+  "project_detail_register_title": "Register a server manually",
+  "project_detail_hcloud_id_label": "Hetzner server ID",
+  "project_detail_name_label": "Display name",
+  "project_detail_add_submit": "Add server",
+  "project_detail_add_hint": "Default base/top types are filled in. Edit them on the server detail page.",
+  "project_detail_servers_title": "Servers ({count})",
+  "project_detail_servers_empty": "No servers registered."
 }
