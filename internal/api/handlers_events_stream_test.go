@@ -102,6 +102,50 @@ func TestEventsStream_DeliversBroadcast(t *testing.T) {
 	}
 }
 
+// TestEventsStream_QueryTokenAccepted verifies that the SSE endpoint
+// accepts the internal token via the ?token=… query parameter when the
+// X-Internal-Token header is absent. This path is used by browser
+// EventSource, which cannot set custom headers.
+func TestEventsStream_QueryTokenAccepted(t *testing.T) {
+	deps, _ := newTestDeps(t)
+	hub := broadcast.NewHub[store.Event]()
+	defer hub.Close()
+	deps.Store.SetBroadcastHub(hub)
+
+	srv := httptest.NewServer(NewRouter(deps))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Note: no X-Internal-Token header set.
+	url := srv.URL + "/api/events/stream?token=" + testInternalToken
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Accept", "text/event-stream")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: want 200, got %d", resp.StatusCode)
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("read first line: %v", err)
+	}
+	if !strings.Contains(line, "event: ready") {
+		t.Fatalf("first frame: want to contain %q, got %q", "event: ready", line)
+	}
+}
+
 // TestEventsStream_DisconnectStopsDelivery verifies that after a client
 // disconnects, no further events are delivered to that subscription.
 // We use a custom handler that mimics the production handler but with
