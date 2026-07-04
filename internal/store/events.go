@@ -47,6 +47,10 @@ func (s *Store) AppendEvent(e Event) (int64, error) {
 		return 0, fmt.Errorf("store: insert event: %w", err)
 	}
 	id, _ := res.LastInsertId()
+	e.ID = id
+	if s.hub != nil {
+		s.hub.Broadcast(e)
+	}
 	return id, nil
 }
 

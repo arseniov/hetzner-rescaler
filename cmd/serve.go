@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jonamat/hetzner-rescaler/internal/api"
+	"github.com/jonamat/hetzner-rescaler/internal/broadcast"
 	"github.com/jonamat/hetzner-rescaler/internal/crypto"
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 	"github.com/jonamat/hetzner-rescaler/internal/rescaler"
@@ -62,6 +63,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	defer st.Close()
 	keyringHolder = key
+
+	// Live events: broadcast every inserted event row to in-process subscribers
+	// (the SSE handler added in a later task).
+	eventHub := broadcast.NewHub[store.Event]()
+	st.SetBroadcastHub(eventHub)
 
 	deps := api.Deps{
 		InternalToken: token,
