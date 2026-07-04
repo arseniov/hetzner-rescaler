@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { Card, Label, Select, Input, Alert } from 'flowbite-svelte';
+  import EventList from '$lib/components/EventList.svelte';
+  import { m } from '$lib/paraglide/messages.js';
   import { api } from '$lib/api';
   import type { RescaleEvent, Server } from '$lib/types';
-  import EventList from '$lib/components/EventList.svelte';
-  import Input from '$lib/components/ui/input.svelte';
-  import Alert from '$lib/components/ui/alert.svelte';
 
   let servers = $state<Server[]>([]);
   let events = $state<RescaleEvent[]>([]);
@@ -35,47 +35,60 @@
 
   // Re-fetch when server or limit changes. kindFilter is purely client-side
   // (filtered via $derived below), so it does not need to trigger a refresh.
-  $effect(() => { serverFilter; limit; refresh(); });
+  $effect(() => {
+    serverFilter;
+    limit;
+    refresh();
+  });
 
   let filtered = $derived(
     kindFilter ? events.filter((e) => e.kind.includes(kindFilter)) : events
   );
 
-  const kinds = ['rescale_up', 'rescale_down', 'rescale_fallback', 'rescale_failed', 'promote', 'demote'];
+  const kinds = [
+    'rescale_up',
+    'rescale_down',
+    'rescale_fallback',
+    'rescale_failed',
+    'promote',
+    'demote'
+  ];
 </script>
 
 <div class="p-6 max-w-4xl mx-auto space-y-6">
-  <h1 class="text-3xl font-semibold">Events</h1>
+  <h1 class="text-3xl font-semibold text-gray-900 dark:text-white">{m.events_title()}</h1>
 
-  {#if error}<Alert variant="destructive">{error}</Alert>{/if}
+  {#if error}<Alert color="danger">{error}</Alert>{/if}
 
-  <div class="grid gap-3 sm:grid-cols-3 rounded-md border border-border p-4">
-    <label class="block text-sm">
-      Server
-      <select bind:value={serverFilter} class="mt-1 flex h-10 w-full rounded-md border border-border bg-background px-3">
-        <option value="">All servers</option>
-        {#each servers as s (s.id)}
-          <option value={s.id}>{s.name}</option>
-        {/each}
-      </select>
-    </label>
-    <label class="block text-sm">
-      Kind
-      <select bind:value={kindFilter} class="mt-1 flex h-10 w-full rounded-md border border-border bg-background px-3">
-        <option value="">All kinds</option>
-        {#each kinds as k}
-          <option value={k}>{k}</option>
-        {/each}
-      </select>
-    </label>
-    <label class="block text-sm">
-      Limit
-      <Input type="number" bind:value={limit} min={1} max={500} class="mt-1" />
-    </label>
-  </div>
+  <Card>
+    <div class="grid gap-3 sm:grid-cols-3">
+      <Label>
+        {m.events_filter_server()}
+        <Select bind:value={serverFilter} class="mt-1">
+          <option value="">{m.events_filter_server_all()}</option>
+          {#each servers as s (s.id)}
+            <option value={s.id}>{s.name}</option>
+          {/each}
+        </Select>
+      </Label>
+      <Label>
+        {m.events_filter_kind()}
+        <Select bind:value={kindFilter} class="mt-1">
+          <option value="">{m.events_filter_kind_all()}</option>
+          {#each kinds as k}
+            <option value={k}>{k}</option>
+          {/each}
+        </Select>
+      </Label>
+      <Label>
+        {m.events_filter_limit()}
+        <Input type="number" bind:value={limit} min={1} max={500} class="mt-1" />
+      </Label>
+    </div>
+  </Card>
 
   {#if loading}
-    <p class="text-muted-foreground">Loading…</p>
+    <p class="text-sm text-gray-600 dark:text-gray-400">{m.events_loading()}</p>
   {:else}
     <EventList events={filtered} limit={filtered.length} />
   {/if}

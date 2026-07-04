@@ -117,5 +117,13 @@
   "windows_field_start": "Start time",
   "windows_field_stop": "Stop time",
   "windows_field_target": "Target server type",
-  "windows_field_enabled": "Enabled"
+  "windows_field_enabled": "Enabled",
+  "events_title": "Events",
+  "events_filter_server": "Server",
+  "events_filter_server_all": "All servers",
+  "events_filter_kind": "Kind",
+  "events_filter_kind_all": "All kinds",
+  "events_filter_limit": "Limit",
+  "events_loading": "Loading…",
+  "events_empty": "No events yet."
 }
