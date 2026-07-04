@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { Card, Alert } from 'flowbite-svelte';
   import { api } from '$lib/api';
+  import { m } from '$lib/paraglide/messages.js';
   import type { Project, Server, RescaleEvent } from '$lib/types';
   import EventList from '$lib/components/EventList.svelte';
   import ServerCard from '$lib/components/ServerCard.svelte';
-  import Alert from '$lib/components/ui/alert.svelte';
 
   let projects = $state<Project[]>([]);
   let servers = $state<Server[]>([]);
@@ -30,40 +31,42 @@
   });
 </script>
 
-<div class="p-6 space-y-6 max-w-5xl mx-auto">
-  <h1 class="text-3xl font-semibold">Dashboard</h1>
+<div class="p-6 space-y-6 max-w-6xl mx-auto">
+  <h1 class="text-3xl font-semibold text-gray-900 dark:text-white">{m.dashboard_title()}</h1>
 
   {#if error}
-    <Alert variant="destructive">{error}</Alert>
+    <Alert color="red">{error}</Alert>
   {/if}
 
   {#if loading}
-    <p class="text-muted-foreground">Loading…</p>
+    <p class="text-gray-600 dark:text-gray-400">{m.dashboard_loading()}</p>
   {:else}
-    <section>
-      <h2 class="text-lg font-medium mb-3">Projects ({projects.length})</h2>
+    <Card>
+      <h2 class="text-lg font-medium mb-3 text-gray-900 dark:text-white">
+        {m.dashboard_section_projects({ count: projects.length })}
+      </h2>
       {#if projects.length === 0}
-        <p class="text-sm text-muted-foreground">
-          No projects yet. <a href="/projects" class="underline">Add one</a>.
-        </p>
+        <p class="text-sm text-gray-600 dark:text-gray-400">No projects yet.</p>
       {:else}
         <ul class="space-y-2">
           {#each projects as p (p.id)}
-            <li class="rounded-md border border-border p-3">
+            <li class="rounded-md border border-gray-200 dark:border-gray-700 p-3">
               <a href="/projects/{p.id}" class="font-medium hover:underline">{p.name}</a>
-              <span class="ml-2 text-xs text-muted-foreground">
-                {p.has_token ? 'token stored' : 'no token'}
+              <span class="ml-2 text-xs text-gray-600 dark:text-gray-400">
+                {p.has_token ? m.projects_token_stored() : m.projects_no_token()}
               </span>
             </li>
           {/each}
         </ul>
       {/if}
-    </section>
+    </Card>
 
-    <section>
-      <h2 class="text-lg font-medium mb-3">Servers ({servers.length})</h2>
+    <Card>
+      <h2 class="text-lg font-medium mb-3 text-gray-900 dark:text-white">
+        {m.dashboard_section_servers({ count: servers.length })}
+      </h2>
       {#if servers.length === 0}
-        <p class="text-sm text-muted-foreground">No servers registered.</p>
+        <p class="text-sm text-gray-600 dark:text-gray-400">{m.servers_empty()}</p>
       {:else}
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {#each servers.slice(0, 6) as s (s.id)}
@@ -71,11 +74,13 @@
           {/each}
         </div>
       {/if}
-    </section>
+    </Card>
 
-    <section>
-      <h2 class="text-lg font-medium mb-3">Recent events</h2>
+    <Card>
+      <h2 class="text-lg font-medium mb-3 text-gray-900 dark:text-white">
+        {m.dashboard_section_recent_events()}
+      </h2>
       <EventList {events} limit={10} />
-    </section>
+    </Card>
   {/if}
 </div>

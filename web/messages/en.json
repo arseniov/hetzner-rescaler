@@ -125,5 +125,9 @@
   "events_filter_kind_all": "All kinds",
   "events_filter_limit": "Limit",
   "events_loading": "Loading…",
-  "events_empty": "No events yet."
+  "events_empty": "No events yet.",
+  "dashboard_loading": "Loading…",
+  "dashboard_section_projects": "Projects ({count})",
+  "dashboard_section_servers": "Servers ({count})",
+  "dashboard_section_recent_events": "Recent events"
 }
