@@ -11,5 +11,14 @@
   "sidebar_events": "Events",
   "sidebar_signout": "Sign out",
   "theme_toggle_light": "Switch to light mode",
-  "theme_toggle_dark": "Switch to dark mode"
+  "theme_toggle_dark": "Switch to dark mode",
+  "login_title": "Sign in",
+  "login_email_label": "Email",
+  "login_password_label": "Password",
+  "login_submit": "Sign in",
+  "login_switch_to_signup": "Need an account? Sign up",
+  "login_switch_to_signin": "Already have an account? Sign in",
+  "login_signup_title": "Create account",
+  "login_signup_submit": "Create account",
+  "login_error_required": "Email and password are required"
 }
