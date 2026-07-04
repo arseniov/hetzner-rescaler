@@ -1,5 +1,23 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// In a Vitest environment, SvelteKit's $env/dynamic/public virtual
+// module returns an object whose `env` getter is undefined, which makes
+// `import { env } from '$env/dynamic/public'` throw at module load.
+// Mock the module so the store can be imported in tests; values are
+// forwarded to vi.stubEnv's underlying import.meta.env so individual
+// tests can drive the token via vi.stubEnv.
+vi.mock('$env/dynamic/public', () => ({
+  env: new Proxy(
+    {},
+    {
+      get: (_target, prop) => {
+        const viteEnv = (import.meta as any).env ?? {};
+        return viteEnv[prop as string];
+      }
+    }
+  )
+}));
+
 type Listener = (ev: MessageEvent) => void;
 class MockEventSource {
   url: string;
@@ -26,10 +44,12 @@ class MockEventSource {
 beforeEach(() => {
   MockEventSource.instances = [];
   (globalThis as any).EventSource = MockEventSource;
+  vi.stubEnv('PUBLIC_INTERNAL_TOKEN', 'test-token');
 });
 
 afterEach(() => {
   vi.resetModules();
+  vi.unstubAllEnvs();
 });
 
 describe('eventsStream store', () => {
@@ -38,6 +58,10 @@ describe('eventsStream store', () => {
     eventsStream.connect();
     expect(MockEventSource.instances).toHaveLength(1);
     const es = MockEventSource.instances[0];
+
+    // The token should be delivered via the query string because the
+    // browser EventSource cannot set custom headers.
+    expect(es.url).toBe('/api/events/stream?token=test-token');
 
     es.open();
     es.emit({ id: 1, kind: 'rescale_up' });

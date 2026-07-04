@@ -1,4 +1,5 @@
 import { browser } from '$app/environment';
+import { env } from '$env/dynamic/public';
 import type { RescaleEvent } from '$lib/types';
 
 const MAX_EVENTS = 100;
@@ -13,7 +14,18 @@ class EventsStreamStore {
 
   connect() {
     if (!browser || this.es) return;
-    this.es = new EventSource('/api/events/stream');
+    // Browser EventSource cannot set custom headers, so the SSE handler
+    // accepts the shared secret via ?token=… in addition to the
+    // X-Internal-Token header. Fall back to import.meta.env so vi.stubEnv
+    // still works in tests (mirrors the pattern used in lib/api.ts).
+    const token =
+      (env.PUBLIC_INTERNAL_TOKEN as string | undefined) ??
+      (import.meta.env.PUBLIC_INTERNAL_TOKEN as string | undefined) ??
+      '';
+    const url = token
+      ? `/api/events/stream?token=${encodeURIComponent(token)}`
+      : '/api/events/stream';
+    this.es = new EventSource(url);
     this.es.addEventListener('message', (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data) as RescaleEvent | { ok?: boolean };
