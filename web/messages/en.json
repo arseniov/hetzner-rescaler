@@ -20,5 +20,15 @@
   "login_switch_to_signin": "Already have an account? Sign in",
   "login_signup_title": "Create account",
   "login_signup_submit": "Create account",
-  "login_error_required": "Email and password are required"
+  "login_error_required": "Email and password are required",
+  "projects_title": "Projects",
+  "projects_empty": "No projects yet. Create one below.",
+  "projects_token_stored": "token stored",
+  "projects_no_token": "no token",
+  "projects_new_name_label": "Project name",
+  "projects_new_token_label": "Hetzner API token",
+  "projects_new_submit": "Create project",
+  "projects_delete_confirm": "Delete project and all its servers?",
+  "projects_delete_submit": "Delete",
+  "projects_last_error": "Last error"
 }
