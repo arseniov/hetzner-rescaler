@@ -2,7 +2,7 @@
   import '../app.css';
   import { onNavigate } from '$app/navigation';
   import { isAuthenticated, ensureSession } from '$lib/stores/auth.svelte';
-  import Nav from '$lib/components/Nav.svelte';
+  import Sidebar from '$lib/components/Sidebar.svelte';
 
   let { children } = $props();
 
@@ -20,11 +20,11 @@
   });
 </script>
 
-<div class="min-h-screen flex flex-col">
+<div class="flex min-h-screen">
   {#if isAuthenticated()}
-    <Nav />
+    <Sidebar />
   {/if}
-  <div class="flex-1">
+  <main class="flex-1 min-w-0">
     {@render children?.()}
-  </div>
+  </main>
 </div>

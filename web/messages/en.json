@@ -1,4 +1,13 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
-  "dashboard_title": "Dashboard"
+  "dashboard_title": "Dashboard",
+  "app_title": "Hetzner Rescaler",
+  "sidebar_dashboard": "Dashboard",
+  "sidebar_status": "Status",
+  "sidebar_status_health": "Health",
+  "sidebar_status_servers": "Operational",
+  "sidebar_projects": "Projects",
+  "sidebar_servers": "Servers (registered)",
+  "sidebar_events": "Events",
+  "sidebar_signout": "Sign out"
 }
