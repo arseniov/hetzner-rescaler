@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,7 +19,9 @@ const testInternalToken = "test-internal-token"
 
 // newTestDeps builds a Deps with a real (temp) SQLite store, an in-memory
 // AES-GCM key, and a stub Hetzner API factory. Tests can override APIFor
-// per-subtest.
+// per-subtest. The default factory returns an empty fakeHetzner so that
+// handlers which auto-fetch on creation (handleCreateProject) succeed
+// without crashing on nil.
 func newTestDeps(t *testing.T) (Deps, *crypto.Keyring) {
 	t.Helper()
 	s, err := store.OpenTemp()
@@ -31,12 +34,13 @@ func newTestDeps(t *testing.T) (Deps, *crypto.Keyring) {
 	if err != nil {
 		t.Fatalf("crypto.NewKeyring: %v", err)
 	}
+	defaultStub := &fakeHetzner{}
 	return Deps{
 		InternalToken: testInternalToken,
 		Store:         s,
 		Keyring:       k,
 		APIFor: func(projectID int64) (hetzner.API, error) {
-			return nil, nil // overridden in tests that need Hetzner
+			return defaultStub, nil // overridden in tests that need specific servers
 		},
 	}, k
 }
@@ -237,6 +241,100 @@ func TestRefreshProject_SkipsAlreadyRegistered(t *testing.T) {
 	}
 	if len(resp.Skipped) != 1 || resp.Skipped[0].HCloudServerID != 1 {
 		t.Fatalf("want server 1 skipped, got %+v", resp.Skipped)
+	}
+}
+
+// TestCreateProject_AutoPopulatesServersFromHetzner verifies that
+// POST /api/projects also fetches the user's existing servers from the
+// Hetzner API and inserts them, so the new project shows up with its
+// servers in the UI without a separate /refresh call.
+func TestCreateProject_AutoPopulatesServersFromHetzner(t *testing.T) {
+	deps, _ := newTestDeps(t)
+	stub := &fakeHetzner{
+		servers: []*hetzner.Server{
+			{ID: 10, Name: "web-1", ServerType: &hetzner.ServerType{Name: "cpx11"}},
+			{ID: 11, Name: "web-2", ServerType: &hetzner.ServerType{Name: "cpx21"}},
+		},
+	}
+	deps.APIFor = func(projectID int64) (hetzner.API, error) { return stub, nil }
+	h := NewRouter(deps)
+
+	body := CreateProjectRequest{Name: "prod", HCloudToken: "hcloud-secret"}
+	req := authedRequest(t, http.MethodPost, "/api/projects", body)
+	rr := recorder(t, h, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("want 201, got %d (body=%q)", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		ID        int64  `json:"id"`
+		Name      string `json:"name"`
+		HasToken  bool   `json:"has_token"`
+		LastError string `json:"last_error"`
+		Added     []ServerResponse `json:"added"`
+		Skipped   []ServerResponse `json:"skipped"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.ID == 0 || resp.Name != "prod" || !resp.HasToken {
+		t.Fatalf("project fields wrong: %+v", resp)
+	}
+	if len(resp.Added) != 2 {
+		t.Fatalf("want 2 servers auto-populated, got %d (added=%+v)", len(resp.Added), resp.Added)
+	}
+	if resp.LastError != "" {
+		t.Fatalf("want no last_error, got %q", resp.LastError)
+	}
+
+	// Verify the servers are actually persisted and queryable via the
+	// listServersByProject store call (this is what the UI eventually
+	// reads through GET /api/servers).
+	servers, err := deps.Store.ListServersByProject(resp.ID)
+	if err != nil {
+		t.Fatalf("ListServersByProject: %v", err)
+	}
+	if len(servers) != 2 {
+		t.Fatalf("want 2 servers in store, got %d", len(servers))
+	}
+	gotIDs := map[int]bool{servers[0].HCloudServerID: true, servers[1].HCloudServerID: true}
+	if !gotIDs[10] || !gotIDs[11] {
+		t.Fatalf("want hcloud IDs 10 and 11, got %v", gotIDs)
+	}
+}
+
+// TestCreateProject_HetznerFetchFailureIsNonFatal verifies that a bad
+// Hetzner token (which fails the auto-fetch) doesn't prevent project
+// creation — the project row is still inserted and the error is
+// surfaced via the response's last_error field so the UI can show it.
+func TestCreateProject_HetznerFetchFailureIsNonFatal(t *testing.T) {
+	deps, _ := newTestDeps(t)
+	stub := &fakeHetzner{} // unused, we'll override APIFor below
+	deps.APIFor = func(projectID int64) (hetzner.API, error) {
+		return stub, fmt.Errorf("decrypt token: cipher: message authentication failed")
+	}
+	h := NewRouter(deps)
+
+	body := CreateProjectRequest{Name: "prod", HCloudToken: "bad-token"}
+	req := authedRequest(t, http.MethodPost, "/api/projects", body)
+	rr := recorder(t, h, req)
+
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("want 201 (project still created), got %d (body=%q)", rr.Code, rr.Body.String())
+	}
+	var resp struct {
+		ID        int64  `json:"id"`
+		Name      string `json:"name"`
+		LastError string `json:"last_error"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.ID == 0 {
+		t.Fatalf("project row should still be created even when Hetzner fetch fails")
+	}
+	if resp.LastError == "" {
+		t.Fatalf("want last_error populated when Hetzner fetch fails")
 	}
 }
 

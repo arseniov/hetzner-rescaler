@@ -99,5 +99,8 @@ export const api = {
     return apiFetch<RescaleEvent[]>(`/api/events?${q}`);
   },
 
-  serverTypes: () => apiFetch<ServerType[]>('/api/server-types')
+  serverTypes: () => apiFetch<ServerType[]>('/api/server-types'),
+
+  metrics: (range: '1d' | '7d' | '30d') =>
+    apiFetch<import('./types').MetricsResponse>(`/api/metrics?range=${range}`)
 };

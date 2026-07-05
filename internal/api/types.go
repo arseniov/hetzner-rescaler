@@ -84,6 +84,16 @@ type RefreshProjectResponse struct {
 	Skipped []ServerResponse `json:"skipped"`
 }
 
+// createProjectResponse is what POST /api/projects returns. It embeds
+// ProjectResponse plus the auto-populated server tallies (from the
+// initial sync) and any LastError from the fetch step (so the UI can
+// surface a bad token without losing the created project row).
+type createProjectResponse struct {
+	ProjectResponse
+	Added   []ServerResponse `json:"added"`
+	Skipped []ServerResponse `json:"skipped"`
+}
+
 // CreateServerRequest is the body for POST /api/servers.
 type CreateServerRequest struct {
 	ProjectID      int64    `json:"project_id"`

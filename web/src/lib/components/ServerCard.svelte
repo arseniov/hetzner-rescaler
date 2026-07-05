@@ -12,13 +12,13 @@
 
 <a
   href="/servers/{server.id}"
-  class="block rounded-md border border-border p-4 hover:bg-muted/50 transition-colors"
+  class="block rounded-md border border-gray-200 p-4 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800 transition-colors"
 >
   <div class="flex items-center justify-between">
-    <span class="font-medium">{server.name}</span>
-    <span class="text-xs text-muted-foreground">{modeLabel[server.mode]}</span>
+    <span class="font-medium text-gray-900 dark:text-white">{server.name}</span>
+    <span class="text-xs text-gray-500 dark:text-gray-400">{modeLabel[server.mode]}</span>
   </div>
-  <div class="mt-1 text-xs text-muted-foreground">
+  <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
     {server.base_server_type} ⇄ {server.top_server_type}
   </div>
 </a>

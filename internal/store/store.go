@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/jonamat/hetzner-rescaler/internal/broadcast"
+
 	_ "modernc.org/sqlite" // pure-Go sqlite driver
 )
 
@@ -15,7 +17,21 @@ const currentSchemaVersion = 1
 
 // Store is the SQLite-backed persistence layer.
 type Store struct {
-	db *sql.DB
+	db  *sql.DB
+	hub *broadcast.Hub[Event]
+}
+
+// SetBroadcastHub attaches an in-process pub/sub hub that receives every
+// event after it is successfully inserted. Pass nil to detach.
+func (s *Store) SetBroadcastHub(hub *broadcast.Hub[Event]) {
+	s.hub = hub
+}
+
+// EventHub returns the broadcast hub attached via SetBroadcastHub, or nil
+// if none has been attached. SSE handlers and other in-process subscribers
+// use this to receive live events as they are inserted.
+func (s *Store) EventHub() *broadcast.Hub[Event] {
+	return s.hub
 }
 
 // Open opens (or creates) the database at path and runs all migrations.

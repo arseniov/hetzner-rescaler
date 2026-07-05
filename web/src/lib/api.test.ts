@@ -1,4 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+// SvelteKit's $env/dynamic/public is a virtual module not provided by Vitest.
+// Mock it so api.ts can import `env` without throwing.
+vi.mock('$env/dynamic/public', () => ({ env: {} }));
+
 import { apiFetch } from './api';
 
 describe('apiFetch', () => {

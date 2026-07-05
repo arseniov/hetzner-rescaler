@@ -2,11 +2,10 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
+  import { Alert, Button, Input, Label, Select } from 'flowbite-svelte';
+  import { m } from '$lib/paraglide/messages.js';
   import { api, ApiError } from '$lib/api';
   import type { Server } from '$lib/types';
-  import Button from '$lib/components/ui/button.svelte';
-  import Input from '$lib/components/ui/input.svelte';
-  import Alert from '$lib/components/ui/alert.svelte';
 
   let server = $state<Server | null>(null);
   let error = $state<string | null>(null);
@@ -48,7 +47,9 @@
     error = null;
     try {
       const chain = form.fallback_chain_csv
-        .split(',').map((s) => s.trim()).filter(Boolean);
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
       const updated = await api.updateServer(serverId, {
         name: form.name.trim(),
         label: form.label.trim(),
@@ -69,48 +70,60 @@
 </script>
 
 <div class="p-6 max-w-2xl mx-auto space-y-4">
-  <h1 class="text-3xl font-semibold">Edit server</h1>
-  {#if error}<Alert variant="destructive">{error}</Alert>{/if}
+  <h1 class="text-3xl font-semibold text-gray-900 dark:text-white">
+    {m.server_edit_title()}
+  </h1>
+  {#if error}
+    <Alert color="danger">{error}</Alert>
+  {/if}
 
   <form onsubmit={submit} class="space-y-3">
-    <label class="block text-sm">
-      Name
-      <Input bind:value={form.name} required class="mt-1" />
-    </label>
-    <label class="block text-sm">
-      Label
-      <Input bind:value={form.label} class="mt-1" />
-    </label>
+    <Label class="space-y-1">
+      <span>{m.server_edit_field_name()}</span>
+      <Input bind:value={form.name} required />
+    </Label>
+    <Label class="space-y-1">
+      <span>{m.server_edit_field_label()}</span>
+      <Input bind:value={form.label} />
+    </Label>
     <div class="grid grid-cols-2 gap-3">
-      <label class="block text-sm">
-        Base server type
-        <Input bind:value={form.base_server_type} required class="mt-1" />
-      </label>
-      <label class="block text-sm">
-        Top server type
-        <Input bind:value={form.top_server_type} required class="mt-1" />
-      </label>
+      <Label class="space-y-1">
+        <span>{m.server_edit_field_base()}</span>
+        <Input bind:value={form.base_server_type} required />
+      </Label>
+      <Label class="space-y-1">
+        <span>{m.server_edit_field_top()}</span>
+        <Input bind:value={form.top_server_type} required />
+      </Label>
     </div>
-    <label class="block text-sm">
-      Fallback chain (comma-separated, top first)
-      <Input bind:value={form.fallback_chain_csv} required class="mt-1" placeholder="cpx31, cpx21, cpx11" />
-    </label>
-    <label class="block text-sm">
-      Mode
-      <select bind:value={form.mode} class="mt-1 flex h-10 w-full rounded-md border border-border bg-background px-3">
-        <option value="manual">Manual</option>
-        <option value="auto_promote">Auto-promote</option>
-        <option value="scheduled">Scheduled</option>
-      </select>
-    </label>
-    <label class="block text-sm">
-      Timezone (IANA)
-      <Input bind:value={form.timezone} required class="mt-1" placeholder="Europe/Rome" />
-    </label>
+    <Label class="space-y-1">
+      <span>{m.server_edit_field_fallback()}</span>
+      <Input
+        bind:value={form.fallback_chain_csv}
+        required
+        placeholder={m.server_edit_field_fallback_placeholder()}
+      />
+    </Label>
+    <Label class="space-y-1">
+      <span>{m.server_edit_field_mode()}</span>
+      <Select bind:value={form.mode}>
+        <option value="manual">{m.servers_mode_manual()}</option>
+        <option value="auto_promote">{m.servers_mode_auto_promote()}</option>
+        <option value="scheduled">{m.servers_mode_scheduled()}</option>
+      </Select>
+    </Label>
+    <Label class="space-y-1">
+      <span>{m.server_edit_field_timezone()}</span>
+      <Input bind:value={form.timezone} required placeholder={m.server_edit_field_timezone_placeholder()} />
+    </Label>
 
     <div class="flex gap-2">
-      <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
-      <Button variant="outline" onclick={() => goto(`/servers/${serverId}`)}>Cancel</Button>
+      <Button type="submit" color="brand" disabled={saving}>
+        {saving ? m.server_edit_saving() : m.server_edit_save()}
+      </Button>
+      <Button color="alternative" onclick={() => goto(`/servers/${serverId}`)}>
+        {m.server_edit_cancel()}
+      </Button>
     </div>
   </form>
 </div>

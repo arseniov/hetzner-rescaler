@@ -1,19 +1,18 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
+  import { Alert, Button, Card, Input, Label } from 'flowbite-svelte';
+  import { m } from '$lib/paraglide/messages.js';
   import { api } from '$lib/api';
   import type { Project, Server } from '$lib/types';
   import ServerCard from '$lib/components/ServerCard.svelte';
-  import Button from '$lib/components/ui/button.svelte';
-  import Input from '$lib/components/ui/input.svelte';
-  import Alert from '$lib/components/ui/alert.svelte';
 
   let project = $state<Project | null>(null);
   let servers = $state<Server[]>([]);
   let error = $state<string | null>(null);
   let loading = $state(true);
 
-  let newHcloudId = $state<number | null>(null);
+  let newHcloudId = $state<number | undefined>(undefined);
   let newName = $state('');
 
   let projectId = $derived(Number($page.params.id));
@@ -53,7 +52,7 @@
         timezone: 'UTC'
       });
       newName = '';
-      newHcloudId = null;
+      newHcloudId = undefined;
       await refresh();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -61,40 +60,64 @@
   }
 </script>
 
-<div class="p-6 max-w-4xl mx-auto space-y-6">
+<div class="p-6 max-w-5xl mx-auto space-y-6">
   {#if loading}
-    <p class="text-muted-foreground">Loading…</p>
+    <p class="text-sm text-gray-600 dark:text-gray-400">{m.project_detail_loading()}</p>
   {:else if !project}
-    <Alert variant="destructive">Project not found.</Alert>
+    <div class="flex items-center justify-between">
+      <h1 class="text-3xl font-semibold text-gray-900 dark:text-white">
+        {m.project_detail_title()}
+      </h1>
+      <Button color="alternative" href="/projects">{m.project_detail_back()}</Button>
+    </div>
+    <Alert color="danger">{m.project_detail_not_found()}</Alert>
   {:else}
-    <h1 class="text-3xl font-semibold">{project.name}</h1>
-    <p class="text-sm text-muted-foreground">
-      token: {project.has_token ? 'stored' : 'missing'} ·
-      created {new Date(project.created_at).toLocaleDateString()}
-    </p>
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-3xl font-semibold text-gray-900 dark:text-white">{project.name}</h1>
+        <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+          token: {project.has_token
+            ? m.project_detail_token_stored()
+            : m.project_detail_token_missing()}
+          ·
+          {m.project_detail_created_at({
+            date: new Date(project.created_at).toLocaleDateString()
+          })}
+        </p>
+      </div>
+      <Button color="alternative" href="/projects">{m.project_detail_back()}</Button>
+    </div>
 
-    {#if error}<Alert variant="destructive">{error}</Alert>{/if}
+    {#if error}
+      <Alert color="danger">{error}</Alert>
+    {/if}
 
-    <form onsubmit={addServerManually} class="space-y-3 rounded-md border border-border p-4">
-      <h2 class="font-medium">Register a server manually</h2>
-      <label class="block text-sm">
-        Hetzner server ID
-        <Input type="number" bind:value={newHcloudId} required class="mt-1" />
-      </label>
-      <label class="block text-sm">
-        Display name
-        <Input bind:value={newName} required class="mt-1" />
-      </label>
-      <Button type="submit">Add server</Button>
-      <p class="text-xs text-muted-foreground">
-        Default base/top types are filled in. Edit them on the server detail page.
-      </p>
-    </form>
+    <Card class="border-0">
+      <h2 class="text-lg font-medium mb-3 text-gray-900 dark:text-white">
+        {m.project_detail_register_title()}
+      </h2>
+      <form onsubmit={addServerManually} class="space-y-3">
+        <Label>
+          {m.project_detail_hcloud_id_label()}
+          <Input type="number" bind:value={newHcloudId} required class="mt-1" />
+        </Label>
+        <Label>
+          {m.project_detail_name_label()}
+          <Input bind:value={newName} required class="mt-1" />
+        </Label>
+        <Button type="submit">{m.project_detail_add_submit()}</Button>
+        <p class="text-xs text-gray-600 dark:text-gray-400">{m.project_detail_add_hint()}</p>
+      </form>
+    </Card>
 
     <section>
-      <h2 class="text-lg font-medium mb-3">Servers ({projectServers.length})</h2>
+      <h2 class="text-lg font-medium mb-3 text-gray-900 dark:text-white">
+        {m.project_detail_servers_title({ count: projectServers.length })}
+      </h2>
       {#if projectServers.length === 0}
-        <p class="text-sm text-muted-foreground">No servers registered.</p>
+        <p class="text-sm text-gray-600 dark:text-gray-400">
+          {m.project_detail_servers_empty()}
+        </p>
       {:else}
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {#each projectServers as s (s.id)}

@@ -1,33 +1,18 @@
 @import 'tailwindcss';
+/* Flowbite v2 design tokens: registers the @theme tokens (--color-heading,
+   --color-body, --color-fg-brand, --color-neutral-primary-soft,
+   --color-default, --radius-base, etc.) so utility classes emitted at
+   runtime by flowbite-svelte components (e.g. text-heading,
+   bg-neutral-primary-soft, border-default, rounded-base) get generated.
+   Also loads the .dark override values. */
+@import "../node_modules/flowbite-svelte/dist/theme-selector/themes/default.css";
+/* Runtime CSS variables: defines the actual :root values for the
+   --color-primary-* brand shades and other tokens that the @theme block
+   above references. Without this, the var(--color-primary-700) chain
+   in @theme resolves to undefined and utilities render unstyled. */
+@import "../node_modules/flowbite-svelte/dist/theme-selector/themes/default-runtime.css";
+@plugin 'flowbite/plugin';
+@custom-variant dark (&:where(.dark, .dark *));
 
-:root {
-  --background: 0 0% 100%;
-  --foreground: 222.2 84% 4.9%;
-  --primary: 222.2 47.4% 11.2%;
-  --primary-foreground: 210 40% 98%;
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-  --border: 214.3 31.8% 91.4%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --border: 217.2 32.6% 17.5%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-  }
-}
-
-html, body { height: 100%; }
-body {
-  background-color: hsl(var(--background));
-  color: hsl(var(--foreground));
-}
+@source "../node_modules/flowbite-svelte/dist";
+@source "../node_modules/flowbite-svelte-icons/dist";

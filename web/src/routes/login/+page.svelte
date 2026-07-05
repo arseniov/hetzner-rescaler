@@ -1,83 +1,71 @@
 <script lang="ts">
-  import { signIn, signUp, isAuthenticated, ensureSession } from '$lib/stores/auth.svelte';
-  import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
-  import Button from '$lib/components/ui/button.svelte';
-  import Input from '$lib/components/ui/input.svelte';
-  import Alert from '$lib/components/ui/alert.svelte';
+  import { goto } from '$app/navigation';
+  import { Button, Card, Input, Label, Alert } from 'flowbite-svelte';
+  import { m } from '$lib/paraglide/messages.js';
+  import { ensureSession, isAuthenticated, signIn, signUp } from '$lib/stores/auth.svelte';
 
-  let mode = $state<'login' | 'signup'>('login');
+  let mode = $state<'signin' | 'signup'>('signin');
   let email = $state('');
   let password = $state('');
-  let name = $state('');
   let error = $state<string | null>(null);
-  let submitting = $state(false);
+  let busy = $state(false);
 
   onMount(async () => {
-    // If a session cookie is already present, hydrate the store and
-    // bounce to the dashboard before the form even renders.
     await ensureSession();
-    if (isAuthenticated()) goto('/');
+    if (isAuthenticated()) await goto('/');
   });
 
-  async function submit(e: SubmitEvent) {
-    e.preventDefault();
+  async function submit() {
     error = null;
-    submitting = true;
+    if (!email || !password) {
+      error = m.login_error_required();
+      return;
+    }
+    busy = true;
     try {
-      if (mode === 'login') {
-        await signIn(email, password);
-      } else {
-        await signUp(email, password, name.trim() || email.split('@')[0]);
-      }
+      if (mode === 'signin') await signIn(email, password);
+      else await signUp(email, password, email.split('@')[0]);
       await goto('/');
-    } catch (err) {
-      error = err instanceof Error ? err.message : String(err);
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
     } finally {
-      submitting = false;
+      busy = false;
     }
   }
 </script>
 
-<div class="flex min-h-screen items-center justify-center px-4">
-  <form onsubmit={submit} class="w-full max-w-sm space-y-4 rounded-lg border border-border bg-background p-6 shadow">
-    <h1 class="text-2xl font-semibold">
-      {mode === 'login' ? 'Sign in' : 'Create account'}
-    </h1>
+<div class="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+  <Card class="w-full max-w-md border-0">
+    <h2 class="text-2xl font-semibold mb-4 text-gray-900 dark:text-white">
+      {mode === 'signin' ? m.login_title() : m.login_signup_title()}
+    </h2>
 
     {#if error}
-      <Alert variant="destructive">{error}</Alert>
+      <Alert color="red" class="mb-3">{error}</Alert>
     {/if}
 
-    {#if mode === 'signup'}
-      <label class="block text-sm">
-        Display name
-        <Input bind:value={name} autocomplete="name" class="mt-1" placeholder="optional" />
-      </label>
-    {/if}
+    <form onsubmit={(e) => { e.preventDefault(); submit(); }} class="space-y-3">
+      <Label>
+        {m.login_email_label()}
+        <Input type="email" bind:value={email} required autocomplete="email" />
+      </Label>
+      <Label>
+        {m.login_password_label()}
+        <Input type="password" bind:value={password} required autocomplete="current-password" />
+      </Label>
 
-    <label class="block text-sm">
-      Email
-      <Input type="email" bind:value={email} required autocomplete="email" class="mt-1" />
-    </label>
+      <Button type="submit" disabled={busy} class="w-full">
+        {mode === 'signin' ? m.login_submit() : m.login_signup_submit()}
+      </Button>
+    </form>
 
-    <label class="block text-sm">
-      Password
-      <Input type="password" bind:value={password} required minlength={8} autocomplete={mode === 'login' ? 'current-password' : 'new-password'} class="mt-1" />
-    </label>
-
-    <Button type="submit" disabled={submitting} class="w-full">
-      {submitting ? 'Working…' : (mode === 'login' ? 'Sign in' : 'Create account')}
-    </Button>
-
-    <p class="text-center text-xs text-muted-foreground">
-      {#if mode === 'login'}
-        No account?
-        <button type="button" class="underline" onclick={() => (mode = 'signup')}>Create one</button>
-      {:else}
-        Already have an account?
-        <button type="button" class="underline" onclick={() => (mode = 'login')}>Sign in</button>
-      {/if}
-    </p>
-  </form>
+    <button
+      type="button"
+      class="mt-4 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+      onclick={() => { mode = mode === 'signin' ? 'signup' : 'signin'; error = null; }}
+    >
+      {mode === 'signin' ? m.login_switch_to_signup() : m.login_switch_to_signin()}
+    </button>
+  </Card>
 </div>

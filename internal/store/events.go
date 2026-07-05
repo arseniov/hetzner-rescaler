@@ -47,6 +47,10 @@ func (s *Store) AppendEvent(e Event) (int64, error) {
 		return 0, fmt.Errorf("store: insert event: %w", err)
 	}
 	id, _ := res.LastInsertId()
+	e.ID = id
+	if s.hub != nil {
+		s.hub.Broadcast(e)
+	}
 	return id, nil
 }
 
@@ -89,6 +93,24 @@ func (s *Store) ListAllEvents(limit int, serverID *int64) ([]*Event, error) {
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: list all events: %w", err)
+	}
+	defer rows.Close()
+	return scanEvents(rows)
+}
+
+// ListEventsInRange returns events whose StartedAt is in [from, to] (UTC
+// unix-second comparison). Used by the metrics endpoint. Order is descending
+// by ID (newest first). An empty result (with no error) means there were no
+// matching rows in the range.
+func (s *Store) ListEventsInRange(from, to time.Time) ([]*Event, error) {
+	rows, err := s.db.Query(
+		`SELECT id, server_id, kind, from_type, to_type, started_at, finished_at, ok, error, triggered_by
+		 FROM events WHERE started_at >= ? AND started_at <= ?
+		 ORDER BY id DESC`,
+		from.Unix(), to.Unix(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: list events in range: %w", err)
 	}
 	defer rows.Close()
 	return scanEvents(rows)
