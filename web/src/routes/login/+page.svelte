@@ -4,11 +4,23 @@
   import { m } from '$lib/paraglide/messages.js';
   import { signIn, signUp } from '$lib/stores/auth.svelte';
 
+  // signupEnabled is set by +layout.server.ts from the operator-
+  // controlled DISABLE_SIGNUP env var. When false, sign-up mode is
+  // hidden in the UI AND the server's Better Auth endpoint refuses
+  // /api/auth/sign-up/email — defense in depth, since the toggle
+  // (mode === 'signup') is also belt-and-braces.
+  let { data }: { data: { signupEnabled: boolean } } = $props();
+
   let mode = $state<'signin' | 'signup'>('signin');
   let email = $state('');
   let password = $state('');
   let error = $state<string | null>(null);
   let busy = $state(false);
+
+  // Derived: the UI should never allow visiting signup mode when
+  // signups are disabled, even if some code path tried to flip `mode`.
+  // The form is also unconditionally hidden in that state below.
+  let signupBlocked = $derived(!data.signupEnabled);
 
   // The server-side hook (web/src/hooks.server.ts) sends logged-in
   // visitors away from /login with a 303 → /. So this component only
@@ -43,27 +55,36 @@
       <Alert color="red" class="mb-3">{error}</Alert>
     {/if}
 
-    <form onsubmit={(e) => { e.preventDefault(); submit(); }} class="space-y-3">
-      <Label>
-        {m.login_email_label()}
-        <Input type="email" bind:value={email} required autocomplete="email" />
-      </Label>
-      <Label>
-        {m.login_password_label()}
-        <Input type="password" bind:value={password} required autocomplete="current-password" />
-      </Label>
+    {#if signupBlocked && mode === 'signup'}
+      <Alert color="yellow" class="mb-3">
+        <span class="font-medium">{m.login_signup_disabled_title()}</span>
+        <span class="block mt-1 text-sm">{m.login_signup_disabled_message()}</span>
+      </Alert>
+    {:else}
+      <form onsubmit={(e) => { e.preventDefault(); submit(); }} class="space-y-3">
+        <Label>
+          {m.login_email_label()}
+          <Input type="email" bind:value={email} required autocomplete="email" />
+        </Label>
+        <Label>
+          {m.login_password_label()}
+          <Input type="password" bind:value={password} required autocomplete="current-password" />
+        </Label>
 
-      <Button type="submit" disabled={busy} class="w-full">
-        {mode === 'signin' ? m.login_submit() : m.login_signup_submit()}
-      </Button>
-    </form>
+        <Button type="submit" disabled={busy || signupBlocked} class="w-full">
+          {mode === 'signin' ? m.login_submit() : m.login_signup_submit()}
+        </Button>
+      </form>
+    {/if}
 
-    <button
-      type="button"
-      class="mt-4 text-sm text-blue-600 dark:text-blue-400 hover:underline"
-      onclick={() => { mode = mode === 'signin' ? 'signup' : 'signin'; error = null; }}
-    >
-      {mode === 'signin' ? m.login_switch_to_signup() : m.login_switch_to_signin()}
-    </button>
+    {#if !signupBlocked}
+      <button
+        type="button"
+        class="mt-4 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+        onclick={() => { mode = mode === 'signin' ? 'signup' : 'signin'; error = null; }}
+      >
+        {mode === 'signin' ? m.login_switch_to_signup() : m.login_switch_to_signin()}
+      </button>
+    {/if}
   </Card>
 </div>

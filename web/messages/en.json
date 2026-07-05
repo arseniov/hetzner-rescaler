@@ -20,6 +20,8 @@
   "login_switch_to_signin": "Already have an account? Sign in",
   "login_signup_title": "Create account",
   "login_signup_submit": "Create account",
+  "login_signup_disabled_title": "Signups are closed",
+  "login_signup_disabled_message": "New account registration has been disabled by the operator. If you need an account, ask an existing user to add one.",
   "login_error_required": "Email and password are required",
   "projects_title": "Projects",
   "projects_empty": "No projects yet. Create one below.",
