@@ -4,15 +4,17 @@
   import { api } from '$lib/api';
   import { m } from '$lib/paraglide/messages.js';
   import { eventsStream } from '$lib/stores/eventsStream.svelte';
-  import type { Project, Server, RescaleEvent } from '$lib/types';
+  import type { Project, Server, RescaleEvent, MetricsResponse } from '$lib/types';
   import EventList from '$lib/components/EventList.svelte';
   import ServerCard from '$lib/components/ServerCard.svelte';
+  import KpiCard from '$lib/components/KpiCard.svelte';
 
   let projects = $state<Project[]>([]);
   let servers = $state<Server[]>([]);
   // Live events stream (REST seed + SSE updates). New events from the
   // SSE store are prepended to this array automatically.
   let events = $derived(eventsStream.events);
+  let metrics = $state<MetricsResponse | null>(null);
   let error = $state<string | null>(null);
   let loading = $state(true);
 
@@ -29,6 +31,15 @@
       // (e.g. /events) that read from `eventsStream.events` see the same
       // context.
       eventsStream.replaceAll(e);
+      // Fetch metrics independently so a slow metrics endpoint does not
+      // block the rest of the dashboard from rendering.
+      try {
+        metrics = await api.metrics('7d');
+      } catch (metricsErr) {
+        // Non-fatal: KPI cards render placeholder values if metrics
+        // cannot be loaded. Surface the error in the console for now.
+        console.error('Failed to load metrics:', metricsErr);
+      }
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -43,6 +54,27 @@
   {#if error}
     <Alert color="red">{error}</Alert>
   {/if}
+
+  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <KpiCard
+      label={m.kpi_active_servers()}
+      value={metrics?.kpis.activeServerCount ?? m.kpi_loading()}
+      hint={m.kpi_active_servers_hint()}
+    />
+    <KpiCard
+      label={m.kpi_projects()}
+      value={metrics?.kpis.projectsWithTokenCount ?? m.kpi_loading()}
+      hint={m.kpi_projects_hint()}
+    />
+    <KpiCard
+      label={m.kpi_rescales_24h_ok()}
+      value={metrics?.kpis.rescales24hOk ?? m.kpi_loading()}
+    />
+    <KpiCard
+      label={m.kpi_last_error()}
+      value={metrics?.kpis.lastRescaleError?.error ?? m.kpi_no_error()}
+    />
+  </div>
 
   {#if loading}
     <p class="text-gray-600 dark:text-gray-400">{m.dashboard_loading()}</p>

@@ -79,3 +79,28 @@ export interface CreateWindowRequest {
 export interface RescaleRequest { direction: 'up' | 'down'; confirm: boolean }
 export interface ConfirmRequest { confirm: boolean }
 export interface RefreshResponse { added: Server[]; skipped: Server[] }
+
+export interface RescaleCountsByDayRow { date: string; ok: number; failed: number; total: number }
+export interface HoursAtTypeRow { serverId: number; serverName: string; base: number; top: number; fallback: number; costEur: number }
+export interface SuccessRateRow { serverId: number; serverName: string; ok: number; total: number; okRate: number }
+export interface MetricsKpis {
+  activeServerCount: number;
+  projectsWithTokenCount: number;
+  rescales24hOk: number;
+  lastRescaleError: null | RescaleError;
+}
+export interface RescaleError {
+  serverId: number;
+  kind: string;
+  at: string;
+  error: string;
+}
+export interface MetricsResponse {
+  range: '1d' | '7d' | '30d';
+  from: string;
+  to: string;
+  kpis: MetricsKpis;
+  rescaleCountsByDay: RescaleCountsByDayRow[];
+  hoursAtType: HoursAtTypeRow[];
+  successRateByServer: SuccessRateRow[];
+}

@@ -129,5 +129,13 @@
   "dashboard_loading": "Loading…",
   "dashboard_section_projects": "Projects ({count})",
   "dashboard_section_servers": "Servers ({count})",
-  "dashboard_section_recent_events": "Recent events"
+  "dashboard_section_recent_events": "Recent events",
+  "kpi_active_servers": "Active servers",
+  "kpi_active_servers_hint": "Servers in auto_promote or scheduled mode",
+  "kpi_projects": "Projects",
+  "kpi_projects_hint": "Projects with a stored Hetzner API token",
+  "kpi_rescales_24h_ok": "Rescales (24h, successful)",
+  "kpi_last_error": "Last rescale error",
+  "kpi_no_error": "No recent failures",
+  "kpi_loading": "Loading…"
 }
