@@ -20,6 +20,7 @@
     "better-auth": "^1.0.0",
     "better-sqlite3": "^11.5.0",
     "drizzle-orm": "^0.36.0",
+    "flowbite": "^4.0.2",
     "flowbite-svelte": "^2.0.0-next.14",
     "flowbite-svelte-icons": "^2.3.0"
   },
