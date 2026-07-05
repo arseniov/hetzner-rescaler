@@ -1,10 +1,10 @@
-# Hetzner rescaler
+# Hetzner Rescaler
 
 <p align="center">
   <a href="https://github.com/jonamat/hetzner-rescaler/releases">
     <img alt="Release" src="https://img.shields.io/github/v/release/jonamat/hetzner-rescaler" />
   </a>
-  
+
   <a href="https://hub.docker.com/repository/docker/jonamat/hetzner-rescaler">
     <img alt="Docker Image Size (tag)" src="https://img.shields.io/docker/image-size/jonamat/hetzner-rescaler/latest" />
   </a>
@@ -18,197 +18,294 @@
   </a>
 </p>
 
-Lightweight CLI tool to programmatically rescale your Hetzner virtual server daily to optimize your budget spending, scaling to a cheaper machine when you don't need or need few resources, and scaling to a more performant one when you know the load will be higher.
+Self-hosted scheduler that programmatically rescales your Hetzner Cloud
+servers — dropping to a cheaper VM when load is low and promoting to a
+more capable one when it's high — managed from a browser, with multiple
+projects and per-project credentials.
 
-## Usage 
-First, you need to generate an [Hetzner API Token](https://docs.hetzner.cloud/#getting-started).<br> 
+## Features
 
-Next you need to create your configuration file or export the required environment variables for the tool.<br>
-The `config` command helps you generate a valid configuration, warning you if there are any logic errors and validating your input.
+- **One container, multiple Hetzner projects.** Each project gets its
+  own API token (encrypted at rest), its own server inventory, and its
+  own schedule.
+- **Three rescale modes per server:** `scheduled` (one or more
+  day/time windows), `auto_promote` (scale up under sustained load
+  and back down), `manual` (operator-driven via UI or CLI).
+- **Web UI** — SvelteKit + Better Auth SPA with a dashboard, projects
+  page, servers list, server detail, windows editor, events timeline,
+  status pages, and a live SSE stream of rescale activity.
+- **CLI** — `hetzner-rescaler` for headless / CI use. Stores everything
+  in SQLite; no config files to ship around.
+- **Single shared database.** The Go engine and the SvelteKit SPA
+  read/write the same SQLite file over WAL — no replication, no
+  separate users, no Drizzle/admin tool needed.
+
+## Quick start
+
+You need at least one [Hetzner Cloud API
+token](https://docs.hetzner.cloud/#getting-started) (read+write scope)
+to import a project. Two install paths:
+
+### Option A — Docker Compose (production / shared server)
+
 ```sh
-hetzner-rescaler config
-``` 
+cp .env.example .env                       # set RESCALER_INTERNAL_TOKEN + BETTER_AUTH_SECRET
+docker compose up -d --build
+open http://localhost:8089                 # sign up; the first account is the admin
+```
 
-Keep in mind if env vars are defined, they will take priority.<br>
-After setting the configuration, you can start the tool by running
+Three services come up behind a single port (default 8089):
+
+| Service        | Image                              | Role                                            |
+| -------------- | ---------------------------------- | ----------------------------------------------- |
+| `caddy`        | `jonamat/hetzner-rescaler-caddy`   | Public entrypoint; routes by path.             |
+| `rescaler-api` | `jonamat/hetzner-rescaler`         | Go HTTP API + scheduler loop.                  |
+| `rescaler-web` | `jonamat/hetzner-rescaler-web`     | SvelteKit SPA + Better Auth on Bun + bun:sqlite |
+
+See [`compose.yaml`](./compose.yaml) for the full service config.
+
+### Option B — Local development with Bun + Go (no Docker)
+
+For hacking on the SPA, the scheduler, or the API in isolation.
+You'll need [Go ≥ 1.23](https://go.dev/dl/) and
+[Bun ≥ 1.1](https://bun.sh/).
+
 ```sh
-hetzner-rescaler start
+# 1. Generate required secrets
+export RESCALER_INTERNAL_TOKEN=$(head -c 32 /dev/urandom | xxd -p -c 64)
+export BETTER_AUTH_SECRET=$(head -c 32 /dev/urandom | base64)
+
+# 2. Build the Go CLI
+make build                                 # outputs ./bin/hetzner-rescaler
+
+# 3. Start the API + scheduler on :8080
+make serve-dev
+
+# 4. In another terminal — start the SPA on :5173 with HMR
+cd web
+PUBLIC_INTERNAL_TOKEN="$RESCALER_INTERNAL_TOKEN" bun run dev
+open http://localhost:5173                 # Vite proxies /api/* to :8080
 ```
 
-### Use with environmental variables
-Export these env vars to override or completely bypass the generated configuration:
-| Variable           | Description                                                                  |
-| ------------------ | ---------------------------------------------------------------------------- |
-| `HCLOUD_TOKEN`     | A valid [Hetzner API Token](https://docs.hetzner.cloud/#getting-started)<br> |
-| `SERVER_ID`        | The ID of the target server<br>                                              |
-| `BASE_SERVER_NAME` | The code of the cheap server type<br>                                        |
-| `TOP_SERVER_NAME`  | The code of the high performance server type<br>                             |
-| `HOUR_START`       | 24h format, colon separated hour when the server should be upgraded<br>      |
-| `HOUR_STOP`        | 24h format, colon separated hour when the server should be downgraded<br>    |
-| `TZ`               | If defined, change the timezone of the timer<br>                             |
+The Go binary serves `/api/*` (except `/api/auth/*`) on loopback. The
+SPA's `vite.config.ts` proxies `/api/*` to `http://127.0.0.1:8080`,
+which is the same loopback the Go process is bound to. Better Auth's
+`/api/auth/*` calls are served from SvelteKit itself.
 
-### Use with Docker
-Pull the image from dockerhub
-```sh
-docker pull jonamat/hetzner-rescaler
+## Architecture
+
+The runtime ships as three loosely-coupled services that share one
+SQLite file via a Docker volume.
+
+```
+                  ┌─────────────────────────────────────────────┐
+                  │            Browser (your laptop)            │
+                  └────────────────────────┬────────────────────┘
+                                           │   http://localhost:8089
+                                           ▼
+             ┌─────────────────────────────────────────────────────┐
+             │                        caddy                        │
+             │  ┌─────────────────┐         ┌─────────────────┐   │
+             │  │  Host: …:8089   │         │  Host: …:8089   │   │
+             │  │  /api/auth/*    │         │  /api/* (rest)  │   │
+             │  │  /* (fallback)  │         │                 │   │
+             │  └────────┬────────┘         └────────┬────────┘   │
+             └───────────┼──────────────────────────┼─────────────┘
+                         │                          │
+                         ▼                          ▼
+             ┌──────────────────────┐    ┌──────────────────────┐
+             │     rescaler-web     │    │     rescaler-api     │
+             │     (Bun runtime)    │    │      (Go binary)     │
+             │                      │    │                      │
+             │ SvelteKit SPA shell  │    │ net/http router      │
+             │   + /api/auth/*      │    │   /api/healthz       │
+             │     (Better Auth,    │    │   /api/projects      │
+             │      Drizzle,        │    │   /api/servers       │
+             │      bun:sqlite)     │    │   /api/windows       │
+             │                      │    │   /api/events        │
+             │ X-Internal-Token     │    │   /api/events/stream │
+             │   middleware → API   │    │   /api/server-types  │
+             └────────────┬─────────┘    │   /api/metrics       │
+                          │              │                      │
+                          │              │ scheduler goroutines │
+                          │              │   tick → rescaler.   │
+                          │              │   RescaleWithFallback│
+                          │              └──────────┬───────────┘
+                          │                         │
+                          ▼                         ▼
+                       ┌────────────────────────────────────────┐
+                       │        SQLite (WAL mode, fs volume)    │
+                       │                                        │
+                       │   projects · servers · windows          │
+                       │   actions · events · __drizzle_mig      │
+                       └────────────────────────────────────────┘
 ```
 
-**Opt A:** Create a config file inside the container & start immediately *beta* 
-```sh
-docker run -ti jonamat/hetzner-rescaler hetzner-rescaler plug
-```
+**Why three services?**
+- The Go engine is the single source of truth for rescale decisions
+  and event records; the SPA is a stateless renderer.
+- The SPA holds Better Auth's user/session/account tables in the same
+  SQLite file, so user creation and rescale history live in the
+  exact same backup.
+- Caddy routes purely by path prefix. Both upstream services see
+  the browser's `Host` header verbatim (`header_up Host {host}`),
+  which keeps cookies, redirect URLs, and SvelteKit's
+  `event.url` reconstruction working.
 
-**Opt B:** Mounting a configuration file 
-```sh
-docker run -v ~/.hetzner-rescaler.yaml:/.hetzner-rescaler.yaml jonamat/hetzner-rescaler
-```
+## Web UI
 
-**Opt C:** Passing config as env vars 
-```sh
-docker run \
--e HCLOUD_TOKEN=abc123 \
--e SERVER_ID=4567 \
--e BASE_SERVER_NAME=cpx11 \
--e TOP_SERVER_NAME=cpx21 \
--e HOUR_START=09:00 \
--e HOUR_STOP=20:00 \
-jonamat/hetzner-rescaler
-```
+[Flowbite Svelte](https://flowbite-svelte.com/) + ApexCharts on top
+of [SvelteKit 2](https://svelte.dev/) with [Better
+Auth](https://www.better-auth.com/) for sign-up / sign-in. All data
+is fetched from the Go API over loopback; the SPA never talks to
+Hetzner directly.
 
-You can also pass a partial configuration file and define the missing vars as env vars (useful eg to hide the API key) 
+| Page        | Purpose                                                            |
+| ----------- | ------------------------------------------------------------------ |
+| `/`         | Dashboard — KPIs, sparkline charts, and recent events.            |
+| `/login`    | Better Auth sign-up / sign-in. First account becomes admin.       |
+| `/projects` | List / add / remove Hetzner projects; per-project refresh button. |
+| `/servers`  | All servers across projects; mode + windows badges.                |
+| `/servers/:id` | Per-server detail: edit mode, manage rescale windows, view events. |
+| `/events`   | Global event log (rescales, refreshes, errors) with filters.      |
+| `/status/servers`, `/status/health` | Liveness pages for the engine and per-server reachability. |
 
-### Use with compose/swarm stacks
-```yml
-version: '3.7'
+A live SSE connection at `/api/events/stream` pushes every event into
+the dashboard the moment the scheduler commits it.
 
-services:
-  hetzner-rescaler:
-    image: jonamat/hetzner-rescaler
+## CLI
 
-    // Provide the env vars
-    environment:
-      HCLOUD_TOKEN: abc123
-      SERVER_ID: 4567
-      BASE_SERVER_NAME: cpx11
-      TOP_SERVER_NAME: cpx21
-      HOUR_START: "09:00"
-      HOUR_STOP: "20:00"
-    
-    // ...or mount the config file
-    volumes:
-      - /var/hetzner/config-file.yaml:/.hetzner-rescaler.yaml
-```
+`hetzner-rescaler` is the Go binary. It has two ways to run:
 
-## The configuration file
-The default path for the config file is `~/.hetzner-rescaler.yaml`.<br>
-You can provide (and create) a custom config path passing the `--config /custom/path/config.yml` flag.<br>
+| Command   | What it does                                                              |
+| --------- | ------------------------------------------------------------------------- |
+| `serve`   | HTTP API + scheduler loop. **Required** for the SPA.                       |
+| `start`   | Scheduler loop only. No HTTP, no UI. Useful for headless / CI / VM-only deploys. |
+| `config`  | Interactive REPL — add/edit projects, servers, modes, windows.            |
+| `status`  | Print configured projects + servers + the most recent events to stdout.   |
+| `try`     | One-shot rescale: `hetzner-rescaler try <server-id> <up\|down>`.          |
+| `migrate` | Import a legacy v1 YAML config into the SQLite database.                  |
 
-Config yaml file example
-```yaml
-hcloud_token: abc123
-server_id: 15393230
-base_server_name: cx11
-top_server_name: cx21
-hour_start: "09:00"
-hour_stop: "20:00"
-```
+Generated config and rescale history live in a single SQLite file;
+Hetzner API tokens are sealed with AES-256-GCM using
+`RESCALER_TOKEN_ENCRYPTION_KEY` (auto-generated on first run if blank
+and written to `/data/key` with mode `0600`).
 
-## Commands
-```
-Usage:
-  hetzner-rescaler [command]
+### Multi-project architecture
 
-Available Commands:
-  config      Interactively add or edit projects, servers, modes, and windows (stored in SQLite)
-  help        Help about any command
-  migrate     Import a legacy YAML config into the SQLite database
-  serve       Run the HTTP API + static SPA + scheduler (loopback)
-  start       Run the scheduler loop only (no HTTP)
-  status      Print all configured projects, servers, and recent events
-  try         One-shot rescale: `hetzner-rescaler try <server-id> <up|down>`
+Each row in `projects` owns its own Hetzner API token (encrypted at
+rest) and its own inventory of servers. The scheduler instantiates one
+goroutine per server and asks `store.Scheduler.apiFor(projectID)` for
+the right `hetzner.API` client at every tick. Refresh on a project
+imports its current server list in one HTTP call.
 
-Flags:
-  -h, --help   help for hetzner-rescaler
+Three rescale modes per server:
+- **`manual`** — operator-only. Buttons on the server detail page or
+  `hetzner-rescaler try <id> up|down`.
+- **`scheduled`** — one or more `windows` (day mask + start/stop time
+  + target server type). On every tick, the scheduler computes the
+  current window target and rescales if it differs from the running
+  type.
+- **`auto_promote`** — scale up under sustained CPU pressure and back
+  down when the load eases.
 
-Use "hetzner-rescaler [command] --help" for more information about a command.
-```
+## Configuration
+
+All configuration is via environment variables. The bundled
+[`.env.example`](./.env.example) lists every key with comments.
+
+| Variable                       | Required            | Purpose                                                  |
+| ------------------------------ | ------------------- | -------------------------------------------------------- |
+| `RESCALER_INTERNAL_TOKEN`      | for `serve`         | Shared secret between SPA and Go API (`X-Internal-Token`). Baked into the SPA at build time. |
+| `RESCALER_TOKEN_ENCRYPTION_KEY`| recommended         | Hex-encoded 32-byte AES-GCM key for project tokens. Blank → auto-generate. |
+| `RESCALER_HTTP_ADDR`           | for `serve`         | Listen address for the API (default `0.0.0.0:8080`).     |
+| `RESCALER_DB_PATH`             | recommended         | SQLite path (default `./db.sqlite`, `/data/db.sqlite` in Docker). |
+| `BETTER_AUTH_SECRET`           | for `serve`         | Signs Better Auth session tokens; ≥ 32 chars.            |
+| `BETTER_AUTH_URL`              | for `serve`         | Public origin the browser uses; used for cookie scoping. |
+| `DATABASE_URL`                 | for `serve`         | SQLite path for the SPA. Must equal `RESCALER_DB_PATH`.  |
+| `PUBLIC_INTERNAL_TOKEN`        | SPA build arg       | Mirror of `RESCALER_INTERNAL_TOKEN`; baked into the client bundle. |
+| `ORIGIN`                       | SPA runtime         | Tells adapter-node the request scheme+origin. Must match `BETTER_AUTH_URL`. |
+| `TZ`                           | optional            | Timezone for window evaluation.                          |
 
 ## Backup
 
-The SQLite database and the token-encryption key must be backed up together:
+The SQLite database **and** the encryption key must be backed up
+together — backup one without the other and your Hetzner tokens are
+unrecoverable.
 
-- DB: `~/.hetzner-rescaler/db.sqlite` (or wherever `RESCALER_DB_PATH` points, default `/data/db.sqlite` in Docker)
-- Key: `~/.hetzner-rescaler/key` (or `/data/key` in Docker)
+| Component | Local dev                | Docker                          |
+| --------- | ------------------------ | ------------------------------- |
+| DB        | `~/.hetzner-rescaler/db.sqlite` (or `$RESCALER_DB_PATH`) | `/data/db.sqlite` |
+| Key       | `~/.hetzner-rescaler/key` (or `$RESCALER_TOKEN_ENCRYPTION_KEY` env) | `/data/key` |
 
-If you back up the DB without the key, your Hetzner tokens are unrecoverable.
+Back up the entire `/data/` volume.
 
-## Web UI (phase 2)
+## Migration from v1 (YAML)
 
-The SvelteKit web UI runs as a separate Node service in the same Docker stack. The browser talks to the Go backend over loopback HTTP using an `X-Internal-Token` shared secret; user authentication for the SPA itself is handled by [Better Auth](https://www.better-auth.com/) running inside the same stack on the SvelteKit service. A Caddy reverse proxy fronts both services on a single port so the browser sees one origin.
-
-### Quick start with docker compose
-
-```sh
-cp .env.example .env                       # edit values (especially RESCALER_INTERNAL_TOKEN, BETTER_AUTH_SECRET)
-cp docker-compose.example.yml docker-compose.yml
-docker compose up -d --build
-# The rescaler-web container applies Better Auth's Drizzle migrations
-# (user / session / account / verification tables) automatically on
-# every start — see `web/Dockerfile`'s `CMD`. Nothing to run by hand.
-```
-
-This brings up three services:
-- `caddy` on http://localhost:8080 (public entrypoint; reverse-proxy to rescaler-api and rescaler-web)
-- `rescaler-api` on `rescaler-api:8080` (internal; serves `/api/*`)
-- `rescaler-web` on `rescaler-web:3000` (internal; serves the SPA + Better Auth at `/api/auth/*`)
-
-### First-time setup
-
-1. Visit http://localhost:8080 — the login page accepts sign-up. The first
-   account you create becomes the only admin (Better Auth single-tenant mode).
-2. In the dashboard, click **Projects → Add project**. Enter a name and a Hetzner Cloud API token.
-3. Click **Refresh from Hetzner** to import your existing servers.
-4. Click a server, then **Rescale up / down** to test the action. Check **Events** for results.
-
-### Configuration
-
-The full set of environment variables is in `.env.example`. The ones specific to the web UI are:
-
-| Variable | Purpose |
-|----------|---------|
-| `RESCALER_INTERNAL_TOKEN` | Shared secret between the SPA and the Go backend. Generated once, baked into the SPA at build time. |
-| `BETTER_AUTH_SECRET` | Shared secret for signing Better Auth session tokens. At least 32 characters. |
-| `BETTER_AUTH_URL` | Public origin the browser uses to reach the stack. Caddy listens here; Better Auth uses it for cookie scoping. |
-| `DATABASE_URL` | Path to the SQLite file Better Auth shares with `rescaler-api`. Inside the bundled compose this is the shared volume mount. |
-
-### Running the SPA in development
+If you have a v1 `~/.hetzner-rescaler.yaml` lying around, convert it
+in-place:
 
 ```sh
-# Terminal 1 — Go backend
-make serve-dev
-
-# Terminal 2 — SPA with HMR against the Go backend.
-# PUBLIC_INTERNAL_TOKEN must match the value used by `make serve-dev`
-# (RESCALER_INTERNAL_TOKEN=dev-token), otherwise /api/* calls return 401.
-cd web
-PUBLIC_INTERNAL_TOKEN=dev-token bun run dev
+hetzner-rescaler migrate            # uses the default path
+hetzner-rescaler migrate --from /path/to/old.yaml
 ```
 
-The Vite dev server proxies `/api/*` (except `/api/auth/*`) to `http://127.0.0.1:8080`, so login + project management work end-to-end without rebuilding the SPA. Better Auth's `/api/auth/*` calls are handled inside SvelteKit (the Vite config carves them out of the Go proxy).
+The command creates a single project with the configured server and
+preserves the original schedule.
 
-## Docker
+## Development
 
-The image runs `serve` by default (loopback HTTP + SPA + scheduler). To run the scheduler-only CLI loop (no HTTP, no UI) start the container with an explicit subcommand:
+### Building from source
 
 ```sh
-docker run -d --name rescaler -v rescaler_data:/data \
-  -e RESCALER_INTERNAL_TOKEN=changeme \
-  jonamat/hetzner-rescaler start
+# Go engine
+make build                             # → ./bin/hetzner-rescaler
+
+# SPA (bun + bun:sqlite)
+cd web && bun install && bun run build # → web/build/
+
+# Multi-arch Docker images (requires buildx)
+make build-multiarch-docker            # builds + pushes linux/amd64, arm/v7, arm64
 ```
 
-## Use cases
-This tool was developed for a my specific use case: I use an Hetzner server for remote development, using the [Remote SSH extension](https://code.visualstudio.com/docs/remote/ssh) to simplify my cross-device development workflow. This machine also serve some personal services, which require very little resources but cannot be stopped for a long time.<br>
-It could be useful for all servers running applications related to a company's opening hours, such as booking, delivery or management software.
+### Tests
+
+```sh
+# Go (race detector + coverage report)
+make test-engine
+
+# SPA (vitest)
+cd web && bun run test
+```
+
+### Project layout
+
+```
+.
+├── cmd/                  cobra subcommands: config, serve, start, status, try, migrate
+├── internal/
+│   ├── api/              HTTP routes, SSE, auth middleware, handler tests
+│   ├── broadcast/        generic in-process pub/sub Hub[T] for live events
+│   ├── crypto/           AES-256-GCM keyring for Hetzner tokens
+│   ├── hcloudmock/       fake Hetzner SDK for handler tests
+│   ├── hetzner/          typed wrapper around the official Hetzner SDK
+│   ├── rescaler/         RescaleWithFallback (the one path used by both API + scheduler)
+│   ├── scheduler/        per-server tick goroutines + window/time evaluation
+│   └── store/            the only package that knows SQL (migrations, CRUD, events)
+├── web/                  SvelteKit 2 + Svelte 5 + Bun + bun:sqlite + Better Auth
+├── caddy/                Caddy Dockerfile + Caddyfile (path-based reverse proxy)
+├── compose.yaml          single-port service graph
+└── main.go               thin entrypoint → cmd.Execute()
+```
+
+### Adding a new rescale trigger
+
+The single dispatch path is `internal/rescaler.RescaleOnce`. Both
+the API handlers (`POST /api/servers/:id/rescale|promote|demote`)
+and the scheduler tick call it. New triggers (cron, webhook,
+manual CLI) should wrap this same function so events end up in the
+same `events` table and the SPA's SSE stream picks them up.
 
 ## License
-MIT
+
+MIT — see [LICENSE](./LICENSE).
