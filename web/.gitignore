@@ -8,3 +8,6 @@ build
 # Paraglide JS generated output (compiled from project.inlang/ + messages/)
 src/lib/paraglide/
 package-lock.json
+pnpm-lock.yaml
+pnpm-workspace.yaml
+yarn.lock

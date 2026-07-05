@@ -66,7 +66,7 @@
     <Alert color="danger">{error}</Alert>
   {/if}
 
-  <Card>
+  <Card class="border-0">
     {#if projects.length === 0}
       <p class="text-sm text-gray-600 dark:text-gray-400">{m.projects_empty()}</p>
     {:else}
@@ -106,7 +106,7 @@
     {/if}
   </Card>
 
-  <Card>
+  <Card class="border-0">
     <h3 class="text-lg font-medium mb-3 text-gray-900 dark:text-white">
       {m.projects_new_submit()}
     </h3>
