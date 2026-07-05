@@ -144,5 +144,17 @@
   "dashboard_chart_range_1d": "1d",
   "dashboard_chart_range_7d": "7d",
   "dashboard_chart_range_30d": "30d",
-  "dashboard_chart_cost_empty": "No rescaling history in this range."
+  "dashboard_chart_cost_empty": "No rescaling history in this range.",
+  "health_title": "System health",
+  "health_card_api_label": "Go API reachable",
+  "health_card_db_label": "SQLite writable",
+  "health_card_hcloud_label": "Hetzner API reachable",
+  "health_card_last_event_label": "Last event age",
+  "health_card_recent_errors_label": "Recent errors (24h)",
+  "health_card_windows_label": "Active rescale windows",
+  "health_warn_threshold": "Warning threshold: {threshold}",
+  "health_ok_below": "Healthy",
+  "health_warn_above": "Warning",
+  "health_fail_above": "Failing",
+  "health_checking": "Refresh"
 }
