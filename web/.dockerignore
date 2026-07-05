@@ -5,3 +5,7 @@ drizzle
 .vite
 *.log
 *.tsbuildinfo
+pnpm-lock.yaml
+pnpm-workspace.yaml
+yarn.lock
+.pnpm-store
