@@ -1,9 +1,8 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { Button, Card, Input, Label, Alert } from 'flowbite-svelte';
   import { m } from '$lib/paraglide/messages.js';
-  import { ensureSession, isAuthenticated, signIn, signUp } from '$lib/stores/auth.svelte';
+  import { signIn, signUp } from '$lib/stores/auth.svelte';
 
   let mode = $state<'signin' | 'signup'>('signin');
   let email = $state('');
@@ -11,11 +10,10 @@
   let error = $state<string | null>(null);
   let busy = $state(false);
 
-  onMount(async () => {
-    await ensureSession();
-    if (isAuthenticated()) await goto('/');
-  });
-
+  // The server-side hook (web/src/hooks.server.ts) sends logged-in
+  // visitors away from /login with a 303 → /. So this component only
+  // ever renders for unauthenticated users — no client-side session
+  // check is needed at mount time.
   async function submit() {
     error = null;
     if (!email || !password) {

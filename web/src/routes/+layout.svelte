@@ -2,7 +2,7 @@
   import '../app.css';
   import { onNavigate, afterNavigate } from '$app/navigation';
   import { SidebarButton, uiHelpers } from 'flowbite-svelte';
-  import { isAuthenticated, ensureSession } from '$lib/stores/auth.svelte';
+  import { ensureSession, isAuthenticated } from '$lib/stores/auth.svelte';
   import { eventsStream } from '$lib/stores/eventsStream.svelte';
   import Sidebar from '$lib/components/Sidebar.svelte';
 
@@ -17,21 +17,17 @@
   const sidebar = uiHelpers();
   const closeSidebar = sidebar.close;
 
-  // Hydrate from the session cookie on the first navigation so the
-  // guard below has reliable state.
+  // The server-side hook (web/src/hooks.server.ts) already gates every
+  // page by session, so the only thing this client-side nav handler
+  // does is keep the in-memory `_user` cache fresh and connect the SSE
+  // stream. Skipping the /login route avoids an unnecessary round-trip
+  // right after a sign-in.
   onNavigate(async (nav) => {
     if (typeof window === 'undefined') return;
-    if (nav.to?.route.id === '/login' || nav.to?.route.id === null) return;
+    if (nav.to?.route.id === '/login') return;
     await ensureSession();
-    if (!isAuthenticated()) {
-      // replaceState so the back button doesn't trap the user on /login
-      // after they sign in.
-      window.location.replace('/login');
-      return;
-    }
-    // Open the SSE stream once we know the user is authenticated.
-    // The connect() call is idempotent — it short-circuits if the
-    // EventSource is already attached.
+    // connect() is idempotent — short-circuits if the EventSource is
+    // already attached, so it's safe to call on every nav.
     eventsStream.connect();
   });
 
