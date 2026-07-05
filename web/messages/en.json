@@ -156,5 +156,12 @@
   "health_ok_below": "Healthy",
   "health_warn_above": "Warning",
   "health_fail_above": "Failing",
-  "health_checking": "Refresh"
+  "health_checking": "Refresh",
+  "servers_status_title": "Server status",
+  "servers_status_empty": "No servers registered.",
+  "servers_status_col_name": "Server",
+  "servers_status_col_mode": "Mode",
+  "servers_status_col_top": "Top type",
+  "servers_status_col_window": "Active window",
+  "servers_status_col_status": "Status"
 }

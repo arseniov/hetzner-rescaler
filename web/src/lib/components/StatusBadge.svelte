@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Badge } from 'flowbite-svelte';
 
-  type Status = 'ok' | 'degraded' | 'unknown';
+  export type Status = 'ok' | 'degraded' | 'unknown';
   interface Props { status: Status }
   let { status }: Props = $props();
 
