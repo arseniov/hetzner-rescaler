@@ -9,6 +9,12 @@
     "skipLibCheck": true,
     "sourceMap": true,
     "strict": true,
-    "moduleResolution": "bundler"
+    "moduleResolution": "bundler",
+    // `bun-types` provides ambient declarations for `bun:sqlite`, `Bun`,
+    // `process`, etc. The SvelteKit-generated tsconfig.json does not
+    // include any `types` array, so adding this here does not conflict
+    // with `@types/*` packages — it just makes Bun's globals available
+    // alongside the DOM lib types.
+    "types": ["bun-types"]
   }
 }

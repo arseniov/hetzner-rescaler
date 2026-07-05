@@ -12,6 +12,29 @@ export default defineConfig({
     svelteTesting(),
     sveltekit()
   ],
+  // `bun:sqlite` (and any future `bun:*` builtin) is provided by the
+  // Bun runtime at load time — it has no npm package to bundle. Without
+  // the regex below, Rollup aborts with "Rollup failed to resolve
+  // import 'bun:sqlite'". `optimizeDeps.exclude` keeps `vite dev` from
+  // trying to pre-bundle it; `build.rollupOptions.external` keeps the
+  // production SSR bundle from trying to bundle it. Both are needed
+  // because Vite uses different resolution paths for dev (esbuild via
+  // optimizeDeps) vs build (Rollup).
+  optimizeDeps: {
+    exclude: ['bun:sqlite', 'bun:sql', 'bun:fs']
+  },
+  build: {
+    rollupOptions: {
+      external: [/^bun:/]
+    }
+  },
+  ssr: {
+    // `db.ts` is only ever imported from server code (hooks.server.ts
+    // → auth.ts → db.ts), so externalizing it for SSR is safe and
+    // prevents Rollup from trying to inline the better-auth / drizzle
+    // server graph into the prerender worker.
+    external: ['bun:sqlite']
+  },
   server: {
     port: 5173,
     proxy: {

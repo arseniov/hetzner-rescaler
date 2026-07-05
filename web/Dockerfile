@@ -1,10 +1,11 @@
 # ---- Stage 1: install deps & build the SvelteKit Node bundle ----
-# We use Node 22 (not Bun) because better-sqlite3's native module is
-# not supported on Bun's runtime (oven-sh/bun#4290), and SvelteKit's
-# prerender worker imports db.ts which loads better-sqlite3.
-# npm install does not read web/bun.lock; it resolves from package.json
-# directly. bun.lock stays in the repo for local dev tooling.
-FROM node:22-bookworm-slim AS builder
+# We use oven/bun instead of node + npm because:
+#   1. The SvelteKit web/ uses bun:sqlite (Bun's built-in SQLite adapter)
+#      for runtime DB access — better-sqlite3 is gone entirely.
+#   2. bun install --frozen-lockfile is faster and lockfile-deterministic.
+#   3. The runner uses `bun build` to execute adapter-node's output;
+#      Bun's Node compatibility shim is enough for SvelteKit's runtime.
+FROM oven/bun:1 AS builder
 WORKDIR /app
 
 # Build-time args the SvelteKit bundle embeds.
@@ -17,17 +18,14 @@ ENV PUBLIC_INTERNAL_TOKEN=$PUBLIC_INTERNAL_TOKEN \
     BETTER_AUTH_SECRET=build-only-placeholder-secret-must-be-at-least-32-chars
 
 COPY web/package.json ./
-# --legacy-peer-deps: better-auth@1.6.23 declares peerOptional
-# better-sqlite3@^12, but the project pins ^11.5.0. npm 7+ rejects
-# the peerOptional mismatch; this flag restores the pre-v7 lenient
-# algorithm and matches the version bun installed in dev.
-RUN npm install --legacy-peer-deps
+COPY web/bun.lock ./
+RUN bun install --frozen-lockfile
 
 COPY web/ ./
-RUN npm run build
+RUN bun run build
 
 # ---- Stage 2: runtime ----
-FROM node:22-bookworm-slim AS runner
+FROM oven/bun:1-slim AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production \
@@ -38,16 +36,24 @@ ENV NODE_ENV=production \
 COPY --from=builder /app/build ./build
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/bun.lock ./bun.lock
 COPY --from=builder /app/drizzle ./drizzle
+COPY --from=builder /app/src ./src
 COPY web/drizzle.config.ts ./drizzle.config.ts
 
 EXPOSE 3000
 
 # Run Drizzle migrations on every container start before launching the
-# SvelteKit server. drizzle-kit's `migrate` command is idempotent — it
-# tracks applied migrations in `__drizzle_migrations` and skips ones
-# already applied, so this is safe to run on every boot, not just
-# first-time setup. `&&` ensures the server only starts if migrations
-# succeed (a failed migration will exit non-zero and Docker will
-# restart the container, surfacing the error in `docker compose logs`).
-CMD ["sh", "-c", "npm run db:migrate && node build"]
+# SvelteKit server. The custom migrator (src/lib/server/migrate.ts)
+# uses drizzle-orm/bun-sqlite/migrator and is idempotent — it tracks
+# applied migrations in `__drizzle_migrations` and skips ones already
+# applied, so this is safe to run on every boot, not just first-time
+# setup. `&&` ensures the server only starts if migrations succeed (a
+# failed migration will exit non-zero and Docker will restart the
+# container, surfacing the error in `docker compose logs`).
+#
+# `bun build/index.js` runs the adapter-node bundle through Bun's
+# runtime. We deliberately do NOT use `bun build` (Bun's bundler CLI)
+# — that command expects an entrypoint and would error out. `start`
+# is mapped to the same command in package.json.
+CMD ["sh", "-c", "bun run db:migrate && bun run start"]

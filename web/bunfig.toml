@@ -1,0 +1,10 @@
+# Bun configuration for the SvelteKit web app.
+#
+# `bun = true` forces Bun (instead of Node) as the JavaScript runtime
+# for `bun run <script>`. This matters for the build: SvelteKit's
+# prerender worker imports hooks.server.ts → auth.ts → db.ts, and
+# db.ts loads `bun:sqlite` (a Bun-runtime builtin that Node cannot
+# resolve). Without this flag, `bun run build` would crash the
+# prerender step with `ERR_UNSUPPORTED_ESM_URL_SCHEME: ... protocol 'bun:'`.
+[run]
+bun = true
