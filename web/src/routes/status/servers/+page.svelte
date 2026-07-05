@@ -45,7 +45,7 @@
     <Alert color="danger">{error}</Alert>
   {/if}
 
-  <Card>
+  <Card class="border-0">
     {#if servers.length === 0}
       <p class="text-sm text-gray-600 dark:text-gray-400">{m.servers_status_empty()}</p>
     {:else}

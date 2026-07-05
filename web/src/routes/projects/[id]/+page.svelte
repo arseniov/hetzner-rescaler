@@ -92,7 +92,7 @@
       <Alert color="danger">{error}</Alert>
     {/if}
 
-    <Card>
+    <Card class="border-0">
       <h2 class="text-lg font-medium mb-3 text-gray-900 dark:text-white">
         {m.project_detail_register_title()}
       </h2>

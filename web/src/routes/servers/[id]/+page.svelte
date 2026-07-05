@@ -113,7 +113,7 @@
   {:else}
     <Tabs tabStyle="underline">
       <TabItem title={m.server_detail_tab_overview()}>
-        <Card>
+        <Card class="border-0">
           <dl class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             <div>
               <dt class="text-gray-600 dark:text-gray-400">{m.server_detail_base_type()}</dt>
@@ -174,7 +174,7 @@
       </TabItem>
 
       <TabItem title={m.server_detail_tab_windows()}>
-        <Card>
+        <Card class="border-0">
           <div class="flex items-center justify-between mb-3">
             <h2 class="text-lg font-medium text-gray-900 dark:text-white">
               {m.server_detail_windows_count({ count: windows.length })}
@@ -211,7 +211,7 @@
       </TabItem>
 
       <TabItem title={m.server_detail_tab_events()}>
-        <Card>
+        <Card class="border-0">
           <h2 class="text-lg font-medium mb-3 text-gray-900 dark:text-white">
             {m.server_detail_recent_events()}
           </h2>

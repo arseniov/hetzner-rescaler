@@ -126,7 +126,7 @@
     <Alert color="danger">{error}</Alert>
   {/if}
 
-  <Card>
+  <Card class="border-0">
     {#if windows.length === 0}
       <p class="text-sm text-gray-600 dark:text-gray-400">{m.windows_empty()}</p>
     {:else}

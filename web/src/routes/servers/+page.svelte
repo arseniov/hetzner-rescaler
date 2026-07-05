@@ -25,7 +25,7 @@
   <h1 class="text-3xl font-semibold text-gray-900 dark:text-white">{m.servers_title()}</h1>
   {#if error}<Alert color="danger">{error}</Alert>{/if}
 
-  <Card>
+  <Card class="border-0">
     {#if servers.length === 0}
       <p class="text-sm text-gray-600 dark:text-gray-400">{m.servers_empty()}</p>
     {:else}

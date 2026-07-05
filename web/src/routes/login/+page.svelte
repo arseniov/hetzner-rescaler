@@ -36,7 +36,7 @@
 </script>
 
 <div class="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
-  <Card class="w-full max-w-md">
+  <Card class="w-full max-w-md border-0">
     <h2 class="text-2xl font-semibold mb-4 text-gray-900 dark:text-white">
       {mode === 'signin' ? m.login_title() : m.login_signup_title()}
     </h2>

@@ -17,6 +17,9 @@
   // SSE store are prepended to this array automatically.
   let events = $derived(eventsStream.events);
   let metrics = $state<MetricsResponse | null>(null);
+  // Tracks whether the metrics fetch has completed (success or fail).
+  // Used to drive KpiCard loading state independent of metrics value.
+  let metricsLoaded = $state(false);
   let error = $state<string | null>(null);
   let loading = $state(true);
   let chartRange = $state<'1d' | '7d' | '30d'>('7d');
@@ -28,6 +31,10 @@
       // Non-fatal: KPI cards render placeholder values if metrics
       // cannot be loaded. Surface the error in the console for now.
       console.warn('metrics refresh failed:', err);
+    } finally {
+      // Mark the metrics request as complete regardless of outcome so
+      // KPI cards can switch from "loading" to "no data" placeholder.
+      metricsLoaded = true;
     }
   }
 
@@ -65,27 +72,31 @@
   <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
     <KpiCard
       label={m.kpi_active_servers()}
-      value={metrics?.kpis.activeServerCount ?? m.kpi_loading()}
+      value={metrics?.kpis.activeServerCount ?? null}
       hint={m.kpi_active_servers_hint()}
+      loading={!metricsLoaded}
     />
     <KpiCard
       label={m.kpi_projects()}
-      value={metrics?.kpis.projectsWithTokenCount ?? m.kpi_loading()}
+      value={metrics?.kpis.projectsWithTokenCount ?? null}
       hint={m.kpi_projects_hint()}
+      loading={!metricsLoaded}
     />
     <KpiCard
       label={m.kpi_rescales_24h_ok()}
-      value={metrics?.kpis.rescales24hOk ?? m.kpi_loading()}
+      value={metrics?.kpis.rescales24hOk ?? null}
+      loading={!metricsLoaded}
     />
     <KpiCard
       label={m.kpi_last_error()}
       value={metrics?.kpis.lastRescaleError?.error ?? m.kpi_no_error()}
+      loading={!metricsLoaded}
     />
   </div>
 
   {#if metrics}
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <Card class="lg:col-span-2">
+      <Card class="lg:col-span-2 border-0">
         <div class="flex items-center justify-between mb-3">
           <h2 class="text-lg font-medium text-gray-900 dark:text-white">{m.dashboard_chart_activity()}</h2>
           <select
@@ -101,7 +112,7 @@
         <RescalingActivityChart data={metrics.rescaleCountsByDay ?? []} />
       </Card>
 
-      <Card>
+      <Card class="border-0">
         <h2 class="text-lg font-medium mb-3 text-gray-900 dark:text-white">
           {m.dashboard_chart_cost()}
         </h2>
@@ -117,7 +128,7 @@
   {#if loading}
     <p class="text-gray-600 dark:text-gray-400">{m.dashboard_loading()}</p>
   {:else}
-    <Card>
+    <Card class="border-0">
       <h2 class="text-lg font-medium mb-3 text-gray-900 dark:text-white">
         {m.dashboard_section_projects({ count: projects.length })}
       </h2>
@@ -137,7 +148,7 @@
       {/if}
     </Card>
 
-    <Card>
+    <Card class="border-0">
       <h2 class="text-lg font-medium mb-3 text-gray-900 dark:text-white">
         {m.dashboard_section_servers({ count: servers.length })}
       </h2>
@@ -152,7 +163,7 @@
       {/if}
     </Card>
 
-    <Card>
+    <Card class="border-0">
       <h2 class="text-lg font-medium mb-3 text-gray-900 dark:text-white">
         {m.dashboard_section_recent_events()}
       </h2>

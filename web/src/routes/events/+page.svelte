@@ -58,7 +58,7 @@
 
   {#if error}<Alert color="danger">{error}</Alert>{/if}
 
-  <Card>
+  <Card class="border-0">
     <div class="grid gap-3 sm:grid-cols-2">
       <Label>
         {m.events_filter_server()}

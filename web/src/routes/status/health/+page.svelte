@@ -73,7 +73,7 @@
   <h1 class="text-3xl font-semibold text-gray-900 dark:text-white">{m.health_title()}</h1>
 
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-    <Card>
+    <Card class="border-0">
       <p class="text-sm text-gray-600 dark:text-gray-400">{m.health_card_api_label()}</p>
       {#if apiOk == null}
         <Spinner class="mt-2" />
@@ -84,7 +84,7 @@
       {/if}
     </Card>
 
-    <Card>
+    <Card class="border-0">
       <p class="text-sm text-gray-600 dark:text-gray-400">{m.health_card_last_event_label()}</p>
       {#if eventAgeSec == null}
         <Spinner class="mt-2" />
@@ -95,7 +95,7 @@
       {/if}
     </Card>
 
-    <Card>
+    <Card class="border-0">
       <p class="text-sm text-gray-600 dark:text-gray-400">{m.health_card_recent_errors_label()}</p>
       <p class="mt-2 text-3xl font-semibold text-gray-900 dark:text-white">{recentErrors}</p>
     </Card>
