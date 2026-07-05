@@ -137,5 +137,12 @@
   "kpi_rescales_24h_ok": "Rescales (24h, successful)",
   "kpi_last_error": "Last rescale error",
   "kpi_no_error": "No recent failures",
-  "kpi_loading": "Loading…"
+  "kpi_loading": "Loading…",
+  "dashboard_chart_activity": "Rescaling activity",
+  "dashboard_chart_cost": "Cost breakdown (€ / month)",
+  "dashboard_chart_range": "Range",
+  "dashboard_chart_range_1d": "1d",
+  "dashboard_chart_range_7d": "7d",
+  "dashboard_chart_range_30d": "30d",
+  "dashboard_chart_cost_empty": "No rescaling history in this range."
 }

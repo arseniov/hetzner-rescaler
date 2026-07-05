@@ -8,6 +8,8 @@
   import EventList from '$lib/components/EventList.svelte';
   import ServerCard from '$lib/components/ServerCard.svelte';
   import KpiCard from '$lib/components/KpiCard.svelte';
+  import RescalingActivityChart from '$lib/components/RescalingActivityChart.svelte';
+  import CostBreakdownChart from '$lib/components/CostBreakdownChart.svelte';
 
   let projects = $state<Project[]>([]);
   let servers = $state<Server[]>([]);
@@ -17,6 +19,17 @@
   let metrics = $state<MetricsResponse | null>(null);
   let error = $state<string | null>(null);
   let loading = $state(true);
+  let chartRange = $state<'1d' | '7d' | '30d'>('7d');
+
+  async function refreshMetrics() {
+    try {
+      metrics = await api.metrics(chartRange);
+    } catch (err) {
+      // Non-fatal: KPI cards render placeholder values if metrics
+      // cannot be loaded. Surface the error in the console for now.
+      console.warn('metrics refresh failed:', err);
+    }
+  }
 
   onMount(async () => {
     try {
@@ -33,13 +46,7 @@
       eventsStream.replaceAll(e);
       // Fetch metrics independently so a slow metrics endpoint does not
       // block the rest of the dashboard from rendering.
-      try {
-        metrics = await api.metrics('7d');
-      } catch (metricsErr) {
-        // Non-fatal: KPI cards render placeholder values if metrics
-        // cannot be loaded. Surface the error in the console for now.
-        console.error('Failed to load metrics:', metricsErr);
-      }
+      await refreshMetrics();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -75,6 +82,37 @@
       value={metrics?.kpis.lastRescaleError?.error ?? m.kpi_no_error()}
     />
   </div>
+
+  {#if metrics}
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <Card class="lg:col-span-2">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-lg font-medium text-gray-900 dark:text-white">{m.dashboard_chart_activity()}</h2>
+          <select
+            bind:value={chartRange}
+            onchange={() => refreshMetrics()}
+            class="rounded border-gray-300 dark:bg-gray-700 dark:text-white text-sm"
+          >
+            <option value="1d">{m.dashboard_chart_range_1d()}</option>
+            <option value="7d">{m.dashboard_chart_range_7d()}</option>
+            <option value="30d">{m.dashboard_chart_range_30d()}</option>
+          </select>
+        </div>
+        <RescalingActivityChart data={metrics.rescaleCountsByDay ?? []} />
+      </Card>
+
+      <Card>
+        <h2 class="text-lg font-medium mb-3 text-gray-900 dark:text-white">
+          {m.dashboard_chart_cost()}
+        </h2>
+        {#if (metrics.hoursAtType ?? []).length === 0}
+          <p class="text-sm text-gray-600 dark:text-gray-400">{m.dashboard_chart_cost_empty()}</p>
+        {:else}
+          <CostBreakdownChart rows={metrics.hoursAtType ?? []} />
+        {/if}
+      </Card>
+    </div>
+  {/if}
 
   {#if loading}
     <p class="text-gray-600 dark:text-gray-400">{m.dashboard_loading()}</p>
