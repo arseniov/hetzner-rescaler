@@ -1,11 +1,14 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { Sidebar, SidebarGroup, SidebarItem, SidebarWrapper } from 'flowbite-svelte';
+  import { Sidebar, SidebarGroup, SidebarItem, SidebarWrapper, CloseButton } from 'flowbite-svelte';
   import { m } from '$lib/paraglide/messages.js';
   import { isAuthenticated, signOut } from '$lib/stores/auth.svelte';
   import { eventsStream } from '$lib/stores/eventsStream.svelte';
   import { goto } from '$app/navigation';
   import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+
+  let { isOpen = false, closeSidebar = () => {} }: { isOpen?: boolean; closeSidebar?: () => void } =
+    $props();
 
   async function handleSignOut() {
     // Close the SSE connection before clearing the auth session so we
@@ -23,19 +26,23 @@
 </script>
 
 <Sidebar
-  isOpen={true}
-  disableBreakpoints={true}
-  alwaysOpen={true}
-  activateClickOutside={false}
-  backdrop={false}
+  {isOpen}
+  {closeSidebar}
+  backdrop={true}
   position="fixed"
+  transitionParams={{ x: -50, duration: 150 }}
+  activeUrl={path}
   ariaLabel="Primary navigation"
-  class="h-screen w-64 border-r border-gray-200 dark:border-gray-700"
+  classes={{ active: 'bg-neutral-tertiary text-heading', nonactive: 'text-body' }}
+  class="z-40"
 >
   <SidebarWrapper class="bg-white dark:bg-gray-800 h-full flex flex-col overflow-y-auto">
-    <h2 class="px-4 py-4 font-semibold text-lg text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700">
-      {m.app_title()}
-    </h2>
+    <div class="flex items-center justify-between px-4 py-4 border-b border-gray-200 dark:border-gray-700">
+      <h2 class="font-semibold text-lg text-gray-900 dark:text-white">
+        {m.app_title()}
+      </h2>
+      <CloseButton onclick={closeSidebar} class="md:hidden" ariaLabel="Close navigation" />
+    </div>
 
     <ul class="space-y-1 p-2">
       <SidebarItem href="/" label={m.sidebar_dashboard()} active={path === '/'} />
