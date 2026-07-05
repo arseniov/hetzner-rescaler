@@ -29,6 +29,11 @@
 <div class="flex min-h-screen">
   {#if isAuthenticated()}
     <Sidebar />
+    <!-- The Sidebar renders with position: fixed (w-64 = 16rem), so the
+         auth main column needs an explicit left offset to keep page
+         content from sliding under it. The spacer mirrors the sidebar's
+         width (w-64 = 16rem). -->
+    <div class="w-64 shrink-0" aria-hidden="true"></div>
   {/if}
   <main class="flex-1 min-w-0">
     {@render children?.()}
