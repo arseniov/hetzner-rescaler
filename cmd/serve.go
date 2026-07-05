@@ -54,6 +54,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("serve: RESCALER_INTERNAL_TOKEN is required (the SPA needs it to call /api/*)")
 	}
 
+	// BETTER_AUTH_SECRET is optional. When set (recommended), the API
+	// middleware will additionally admit requests that carry a valid
+	// better-auth.session_token cookie, giving the SPA a second auth
+	// path that doesn't depend on the internal token. When unset, the
+	// API reverts to InternalToken-only (matches CLI/scripts).
+	sessionSecret := os.Getenv("BETTER_AUTH_SECRET")
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
@@ -71,6 +78,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	deps := api.Deps{
 		InternalToken: token,
+		SessionSecret: sessionSecret,
 		Store:         st,
 		Keyring:       key,
 		APIFor:        apiFactory(st),

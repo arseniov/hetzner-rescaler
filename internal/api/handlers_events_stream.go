@@ -5,24 +5,30 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"github.com/jonamat/hetzner-rescaler/internal/store"
 )
 
-// eventsStreamAuth allows EventSource (which cannot set custom headers)
-// to deliver the shared secret via ?token=… in addition to the standard
-// X-Internal-Token header. If the header is absent but a non-empty
-// `token` query parameter is present, the parameter is copied into the
-// header before delegating to the normal internal-token middleware.
+// eventsStreamAuth allows EventSource (which cannot set custom
+// headers) to deliver the shared secret via ?token=… in addition to
+// the standard X-Internal-Token header. If the header is absent but
+// a non-empty `token` query parameter is present, the parameter is
+// copied into the header before delegating to RequireAuth. The
+// combined middleware also accepts a verified Better Auth session
+// cookie — EventSource sends same-origin credentials by default, so
+// the SPA's live-event stream Just Works without ?token=.
 //
-// Use this wrapper only for routes consumed by EventSource. All other
-// /api/* routes continue to require the header via auth().
-func eventsStreamAuth(token string, h http.Handler) http.Handler {
+// Use this wrapper only for routes consumed by EventSource. All
+// other /api/* routes continue to require the header or cookie via
+// auth().
+func eventsStreamAuth(internalToken, sessionSecret string, st *store.Store, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Internal-Token") == "" {
 			if q := r.URL.Query().Get("token"); q != "" {
 				r.Header.Set("X-Internal-Token", q)
 			}
 		}
-		RequireInternalToken(token)(h).ServeHTTP(w, r)
+		RequireAuth(internalToken, sessionSecret, st)(h).ServeHTTP(w, r)
 	})
 }
 

@@ -20,8 +20,16 @@ type Deps struct {
 	// header on all /api/* calls except /api/healthz. Required.
 	InternalToken string
 
+	// SessionSecret is the same Better Auth secret that rescaler-web
+	// uses to sign session cookies (BETTER_AUTH_SECRET). When non-empty
+	// the auth middleware also admits requests carrying a valid
+	// better-auth.session_token cookie. Empty disables the cookie path —
+	// every authenticated request must then carry X-Internal-Token.
+	SessionSecret string
+
 	// Store is the SQLite-backed persistence layer. Required for handlers
-	// that read or mutate engine state.
+	// that read or mutate engine state, and for the session lookup
+	// performed by RequireAuth.
 	Store *store.Store
 
 	// Keyring is the AES-256 key used to seal Hetzner tokens before
@@ -49,8 +57,11 @@ func NewRouter(deps Deps) http.Handler {
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
-	// All /api/* routes (except /api/healthz) require the internal token.
-	auth := RequireInternalToken(deps.InternalToken)
+	// All /api/* routes (except /api/healthz) require either:
+	//   - a valid X-Internal-Token header (CLI scripts), or
+	//   - a verified Better Auth session cookie (browser SPA).
+	auth := RequireAuth(deps.InternalToken, deps.SessionSecret, deps.Store)
+	streamAuth := eventsStreamAuth(deps.InternalToken, deps.SessionSecret, deps.Store, http.HandlerFunc(deps.handleEventsStream))
 
 	// Project routes
 	mux.Handle("GET /api/projects", auth(http.HandlerFunc(deps.handleListProjects)))
@@ -79,7 +90,7 @@ func NewRouter(deps Deps) http.Handler {
 	// Event routes
 	mux.Handle("GET /api/servers/{id}/events", auth(http.HandlerFunc(deps.handleServerEvents)))
 	mux.Handle("GET /api/events", auth(http.HandlerFunc(deps.handleGlobalEvents)))
-	mux.Handle("GET /api/events/stream", eventsStreamAuth(deps.InternalToken, http.HandlerFunc(deps.handleEventsStream)))
+	mux.Handle("GET /api/events/stream", streamAuth)
 
 	// Server-type route (proxies to Hetzner via the first project's API)
 	mux.Handle("GET /api/server-types", auth(http.HandlerFunc(deps.handleServerTypes)))
