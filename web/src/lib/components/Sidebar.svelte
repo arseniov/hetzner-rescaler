@@ -23,10 +23,32 @@
 
   type Props = {
     isOpen?: boolean;
+    /** Desktop only: when true the fixed column is hidden so the
+     *  content can fill the viewport. The mobile drawer is unaffected. */
+    collapsed?: boolean;
     closeSidebar?: () => void;
+    /** Desktop only: hook used by sidebar-internal links that should
+     *  collapse the column after a navigation (parity with mobile,
+     *  where every link click closes the drawer). */
+    closeDesktopSidebar?: () => void;
   };
 
-  let { isOpen = false, closeSidebar = () => {} }: Props = $props();
+  let {
+    isOpen = false,
+    collapsed = false,
+    closeSidebar = () => {},
+    closeDesktopSidebar = () => {}
+  }: Props = $props();
+
+  // Internal click handler — on desktop we want sidebar nav links to
+  // dismiss the column after navigation so the operator gets the full
+  // content width. On mobile the drawer is already closed by the
+  // existing `closeSidebar` callback (registered as the root's
+  // afterNavigate handler).
+  function handleNavClick() {
+    closeSidebar();
+    closeDesktopSidebar();
+  }
 
   // Shape of the sidebar: one Dashboard item at the top, then a
   // "Status" group, then primary nav items, then auth/utility.
@@ -81,7 +103,7 @@
         {@const active = isActive(item.href)}
         <a
           href={item.href}
-          onclick={closeSidebar}
+          onclick={handleNavClick}
           class={cn(
             'group flex h-8 items-center gap-3 rounded-sm px-3 text-sm transition-colors',
             active
@@ -114,7 +136,7 @@
         {@const active = isActive(item.href)}
         <a
           href={item.href}
-          onclick={closeSidebar}
+          onclick={handleNavClick}
           class={cn(
             'group flex h-8 items-center gap-3 rounded-sm px-3 text-sm transition-colors',
             active
@@ -189,11 +211,16 @@
 {/snippet}
 
 <!--
-  DESKTOP: fixed-position sidebar visible from `md` and up. Hairline
-  right border, hairline background contrast. Pointer-events always
-  on (no overlay).
+  DESKTOP: fixed-position sidebar visible from `md` and up. Hidden
+  when `collapsed` is true so the content column can fill the
+  viewport — `top-12` clears the always-visible top bar added by the
+  layout.
 -->
-<aside class="fixed inset-y-0 left-0 z-30 hidden md:block" aria-label="Primary navigation">
+<aside
+  class="fixed inset-y-0 left-0 top-12 z-30 hidden {collapsed ? 'md:hidden' : 'md:block'}"
+  aria-label="Primary navigation"
+  aria-hidden={collapsed}
+>
   {@render nav_body()}
 </aside>
 

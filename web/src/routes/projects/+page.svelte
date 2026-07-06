@@ -26,6 +26,12 @@
   // because they were already registered elsewhere (`skipped`). The
   // operator previously never saw these numbers — they were dropped
   // because the web typed the response as `Project`.
+  //
+  // Both fields arrive as `null` when the initial sync fails before
+  // the loop completes (most commonly an invalid Hetzner token); we
+  // surface that case through `syncWarning` instead, and coerce null
+  // to 0 here so the Alert renders "Imported 0 servers" rather than
+  // crashing on `null.length`.
   let createNotice = $state<{ added: number; skipped: number } | null>(null);
   let syncWarning = $state<string | null>(null);
 
@@ -73,7 +79,13 @@
       newToken = '';
       addOpen = false;
       // Show the auto-sync tally so the operator knows what got linked.
-      createNotice = { added: result.added.length, skipped: result.skipped.length };
+      // `result.added` / `result.skipped` may be null when the initial
+      // sync failed (e.g. invalid token) — coerce to 0 so the Alert
+      // renders cleanly instead of throwing on `null.length`.
+      createNotice = {
+        added: result.added?.length ?? 0,
+        skipped: result.skipped?.length ?? 0
+      };
       if (result.last_error) syncWarning = result.last_error;
       await refresh();
     } catch (e) {

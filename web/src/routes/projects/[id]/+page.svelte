@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
-  import { ArrowLeft } from 'lucide-svelte';
+  import { ArrowLeft, Plus } from 'lucide-svelte';
   import { m } from '$lib/paraglide/messages.js';
   import { api, ApiError } from '$lib/api';
   import type { Project, Server } from '$lib/types';
@@ -9,6 +9,7 @@
   import Input from '$lib/components/ui/input.svelte';
   import Label from '$lib/components/ui/label.svelte';
   import Alert from '$lib/components/ui/alert.svelte';
+  import Dialog from '$lib/components/ui/dialog.svelte';
   import ServerCard from '$lib/components/ServerCard.svelte';
   import ServerTypeSelect from '$lib/components/ServerTypeSelect.svelte';
 
@@ -17,17 +18,39 @@
   let error = $state<string | null>(null);
   let loading = $state(true);
 
-  // Inline register-server form state. We keep this on the page
-  // rather than behind a dialog because it's a short, primary
-  // action for the project view. The base/top/fallback fields are
-  // ServerTypeSelect dropdowns so the operator can't typo a Hetzner
-  // type code (previous default was hardcoded 'cpx11'/'cpx31').
+  // Register-server dialog. The form used to live inline on the page;
+  // it was a constant visual tax on a project that already has its
+  // servers. Now it opens behind an "Add server" button next to the
+  // Servers section title — same affordance as "Add project" on /projects.
+  // Form fields live in component state and are reset on close so the
+  // next invocation starts blank.
+  let registerOpen = $state(false);
   let newHcloudId = $state<string>('');
   let newName = $state('');
   let newBase = $state('');
   let newTop = $state('');
   let newFallbackCsv = $state('');
   let registering = $state(false);
+  let registerError = $state<string | null>(null);
+
+  function resetRegisterForm() {
+    newHcloudId = '';
+    newName = '';
+    newBase = '';
+    newTop = '';
+    newFallbackCsv = '';
+    registerError = null;
+  }
+
+  function openRegisterDialog() {
+    resetRegisterForm();
+    registerOpen = true;
+  }
+
+  function closeRegisterDialog() {
+    registerOpen = false;
+    resetRegisterForm();
+  }
 
   let projectId = $derived(Number($page.params.id));
 
@@ -52,7 +75,7 @@
   async function registerServer(e: SubmitEvent) {
     e.preventDefault();
     if (!newHcloudId) return;
-    error = null;
+    registerError = null;
     registering = true;
     try {
       const chain = newFallbackCsv
@@ -74,14 +97,11 @@
         mode: 'manual',
         timezone: 'UTC'
       });
-      newName = '';
-      newHcloudId = '';
-      newBase = '';
-      newTop = '';
-      newFallbackCsv = '';
+      registerOpen = false;
+      resetRegisterForm();
       await refresh();
     } catch (err) {
-      error = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err);
+      registerError = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err);
     } finally {
       registering = false;
     }
@@ -93,10 +113,11 @@
 </svelte:head>
 
 <!--
-  Project detail — one project, three sections: identity header,
-  register-server form, list of servers in this project. The header
-  carries the token status and creation date as a single muted line;
-  we don't repeat the name as a separate badge.
+  Project detail — three sections: identity header, servers list (with
+  an "Add server" affordance that opens the register dialog), and the
+  register dialog itself. The header carries the token status and
+  creation date as a single muted line; we don't repeat the name as a
+  separate badge.
 -->
 <div class="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
   {#if loading}
@@ -138,74 +159,23 @@
       <Alert variant="destructive" class="mb-6">{error}</Alert>
     {/if}
 
-    <!-- Register-server form. Inline; same hairline panel vocabulary
-         as the rest of the page. The hcloud_server_id input is
-         number-coerced (string ↔ number) so the field can be empty
-         during typing without "NaN" appearing in the value.
-
-         The base/top/fallback chain fields are operator-driven
-         dropdowns (was: hardcoded 'cpx11'/'cpx31' defaults that the
-         operator had to fix on the server's edit page later). We
-         intentionally leave them empty rather than auto-pick — silent
-         defaults hide mistakes, and the dropdown makes the choice
-         cheap. -->
-    <section
-      aria-label="Register a server manually"
-      class="mb-6 rounded-md border border-border bg-card p-4"
-    >
-      <h2 class="mb-3 font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-        {m.project_detail_register_title()}
-      </h2>
-      <form onsubmit={registerServer} class="space-y-3">
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-[10rem_1fr_auto] sm:items-end">
-          <div class="flex flex-col gap-1.5">
-            <Label for="hcloud-id">{m.project_detail_hcloud_id_label()}</Label>
-            <Input
-              id="hcloud-id"
-              type="number"
-              bind:value={newHcloudId}
-              required
-              placeholder="12345678"
-            />
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <Label for="hcloud-name">{m.project_detail_name_label()}</Label>
-            <Input id="hcloud-name" bind:value={newName} required placeholder="web-1" />
-          </div>
-          <Button variant="primary" type="submit" disabled={registering}>
-            {registering ? '…' : m.project_detail_add_submit()}
-          </Button>
-        </div>
-
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div class="flex flex-col gap-1.5">
-            <Label for="reg-base">{m.project_detail_field_base()}</Label>
-            <ServerTypeSelect id="reg-base" bind:value={newBase} required />
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <Label for="reg-top">{m.project_detail_field_top()}</Label>
-            <ServerTypeSelect id="reg-top" bind:value={newTop} required />
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <Label for="reg-fallback">{m.project_detail_field_fallback()}</Label>
-            <Input
-              id="reg-fallback"
-              bind:value={newFallbackCsv}
-              placeholder="cpx31,cpx21"
-            />
-          </div>
-        </div>
-      </form>
-      <p class="mt-2 text-xs text-muted-foreground">{m.project_detail_add_hint()}</p>
-    </section>
-
-    <!-- Servers in this project. The list mirrors the dashboard's
-         server list vocabulary (ServerCard) so a server looks the
-         same everywhere. -->
+    <!--
+      Servers in this project. The list mirrors the dashboard's server
+      list vocabulary (ServerCard) so a server looks the same
+      everywhere. The section header carries the count on the left and
+      the "Add server" button on the right — same idiom as "Add project"
+      on /projects. Clicking it opens the register dialog below.
+    -->
     <section aria-label="Servers in this project">
-      <h2 class="mb-3 font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-        {m.project_detail_servers_title({ count: projectServers.length })}
-      </h2>
+      <header class="mb-3 flex items-center justify-between gap-3">
+        <h2 class="font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+          {m.project_detail_servers_title({ count: projectServers.length })}
+        </h2>
+        <Button variant="default" size="sm" onclick={openRegisterDialog}>
+          <Plus class="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+          {m.project_detail_add_server_button()}
+        </Button>
+      </header>
       {#if projectServers.length === 0}
         <p class="text-sm text-muted-foreground">{m.project_detail_servers_empty()}</p>
       {:else}
@@ -218,3 +188,75 @@
     </section>
   {/if}
 </div>
+
+<!--
+  Register-server dialog. The hcloud_server_id input is number-coerced
+  (string ↔ number) so the field can be empty during typing without
+  "NaN" appearing in the value. The base/top/fallback chain fields are
+  operator-driven dropdowns (was: hardcoded 'cpx11'/'cpx31' defaults
+  that the operator had to fix on the server's edit page later). We
+  intentionally leave them empty rather than auto-pick — silent
+  defaults hide mistakes, and the dropdown makes the choice cheap.
+
+  The dialog is sized `lg` so all five fields fit on one screen without
+  scrolling on desktop; on mobile the content area scrolls naturally.
+-->
+<Dialog
+  bind:open={registerOpen}
+  title={m.project_detail_register_dialog_title()}
+  description={m.project_detail_register_dialog_description()}
+  size="lg"
+>
+  <form id="register-server-form" onsubmit={registerServer} class="space-y-4">
+    {#if registerError}
+      <Alert variant="destructive">{registerError}</Alert>
+    {/if}
+
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div class="flex flex-col gap-1.5">
+        <Label for="hcloud-id">{m.project_detail_hcloud_id_label()}</Label>
+        <Input
+          id="hcloud-id"
+          type="number"
+          bind:value={newHcloudId}
+          required
+          placeholder="12345678"
+        />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <Label for="hcloud-name">{m.project_detail_name_label()}</Label>
+        <Input id="hcloud-name" bind:value={newName} required placeholder="web-1" />
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div class="flex flex-col gap-1.5">
+        <Label for="reg-base">{m.project_detail_field_base()}</Label>
+        <ServerTypeSelect id="reg-base" bind:value={newBase} required />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <Label for="reg-top">{m.project_detail_field_top()}</Label>
+        <ServerTypeSelect id="reg-top" bind:value={newTop} required />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <Label for="reg-fallback">{m.project_detail_field_fallback()}</Label>
+        <Input
+          id="reg-fallback"
+          bind:value={newFallbackCsv}
+          placeholder="cpx31,cpx21"
+        />
+      </div>
+    </div>
+
+    <p class="text-xs text-muted-foreground">{m.project_detail_add_hint()}</p>
+  </form>
+
+  {#snippet footer()}
+    <Button variant="ghost" onclick={closeRegisterDialog} disabled={registering}>
+      Cancel
+    </Button>
+    <Button variant="primary" type="submit" form="register-server-form" disabled={registering}>
+      {registering ? '…' : m.project_detail_add_submit()}
+    </Button>
+  {/snippet}
+</Dialog>

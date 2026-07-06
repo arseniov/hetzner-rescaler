@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { api } from '$lib/api';
   import { m } from '$lib/paraglide/messages.js';
   import { eventsStream } from '$lib/stores/eventsStream.svelte';
@@ -21,6 +21,13 @@
   let projects = $state<Project[]>([]);
   let servers = $state<Server[]>([]);
 
+  // Live clock — updates every second so the time chip in the header
+  // is genuinely "now", not "the moment the page rendered". The previous
+  // version captured `new Date()` once, so the displayed time froze as
+  // soon as the page settled.
+  let now = $state(new Date());
+  let clockTimer: ReturnType<typeof setInterval> | null = null;
+
   async function refreshMetrics() {
     try {
       metrics = await api.metrics(chartRange);
@@ -34,6 +41,9 @@
   }
 
   onMount(async () => {
+    clockTimer = setInterval(() => {
+      now = new Date();
+    }, 1000);
     try {
       // Seed the SSE store with a recent snapshot so /events and other
       // consumers see the same context. In parallel we fetch the
@@ -54,14 +64,18 @@
     }
   });
 
+  onDestroy(() => {
+    if (clockTimer) clearInterval(clockTimer);
+  });
+
   function formatRangeCount(n: number | null | undefined): string {
     return n === null || n === undefined ? '—' : String(n);
   }
 
-  // Three most recent events — same order as the SSE store (newest
-  // first). Capped at three so the panel stays the same height as the
-  // surrounding KPI cards.
-  let lastEvents = $derived(eventsStream.events.slice(0, 3));
+  // Two most recent events — same order as the SSE store (newest
+  // first). Capped at two so the panel stays compact and never out-
+  // grows the surrounding KPI cards in the grid.
+  let lastEvents = $derived(eventsStream.events.slice(0, 2));
 
   // O(1) server_id → context lookup. Built fresh from the latest
   // projects/servers lists; if either list is empty the field shows
@@ -82,11 +96,12 @@
     return serverCtx.get(e.server_id) ?? { serverName: `#${e.server_id}`, projectName: '—' };
   }
 
-  // Compact "12:34" timestamp — the panel is dense; the full datetime
-  // lives on /events.
+  // Compact "12:34:56" timestamp — the panel is dense; the full
+  // datetime lives on /events. We include seconds so the live time
+  // visibly ticks even when seconds is the only thing that changes.
   function fmtTime(iso: string): string {
     const d = new Date(iso);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   }
 </script>
 
@@ -107,8 +122,8 @@
       {m.dashboard_title()}
     </h1>
     {#if metricsLoaded}
-      <span class="font-mono text-xs text-muted-foreground tabular">
-        {new Date().toLocaleTimeString()}
+      <span class="font-mono text-xs tabular text-muted-foreground tabular-nums">
+        {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
       </span>
     {/if}
   </header>
@@ -133,7 +148,7 @@
     >
       <KpiCard
         label={m.kpi_active_servers()}
-        value={formatRangeCount(metrics?.kpis.activeServerCount)}
+        value={formatRangeCount(metrics?.kpis.active_server_count)}
         hint={m.kpi_active_servers_hint()}
         loading={!metricsLoaded}
       />
@@ -145,7 +160,7 @@
     >
       <KpiCard
         label={m.kpi_projects()}
-        value={formatRangeCount(metrics?.kpis.projectsWithTokenCount)}
+        value={formatRangeCount(metrics?.kpis.projects_with_token_count)}
         hint={m.kpi_projects_hint()}
         loading={!metricsLoaded}
       />
@@ -157,7 +172,7 @@
     >
       <KpiCard
         label={m.kpi_rescales_24h_ok()}
-        value={formatRangeCount(metrics?.kpis.rescales24hOk)}
+        value={formatRangeCount(metrics?.kpis.rescales_24h_ok)}
         loading={!metricsLoaded}
       />
     </a>
@@ -237,17 +252,17 @@
             {/each}
           </div>
         </div>
-        <RescalingActivityChart data={metrics.rescaleCountsByDay ?? []} />
+        <RescalingActivityChart data={metrics.rescale_counts_by_day ?? []} />
       </div>
 
       <div class="rounded-md border border-border bg-card p-4">
         <h2 class="mb-3 font-display text-base font-semibold text-foreground">
           {m.dashboard_chart_cost()}
         </h2>
-        {#if (metrics.hoursAtType ?? []).length === 0}
+        {#if (metrics.hours_at_type ?? []).length === 0}
           <p class="text-sm text-muted-foreground">{m.dashboard_chart_cost_empty()}</p>
         {:else}
-          <CostBreakdownChart rows={metrics.hoursAtType ?? []} />
+          <CostBreakdownChart rows={metrics.hours_at_type ?? []} />
         {/if}
       </div>
     </section>
