@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { Card, Label, Select, Input, Alert } from 'flowbite-svelte';
-  import EventList from '$lib/components/EventList.svelte';
   import { m } from '$lib/paraglide/messages.js';
   import { api } from '$lib/api';
   import { eventsStream } from '$lib/stores/eventsStream.svelte';
-  import type { RescaleEvent, Server } from '$lib/types';
+  import type { Server } from '$lib/types';
+  import EventList from '$lib/components/EventList.svelte';
+  import Alert from '$lib/components/ui/alert.svelte';
+  import Label from '$lib/components/ui/label.svelte';
 
   let servers = $state<Server[]>([]);
   // Live events stream — read from the SSE-backed store. The store is
@@ -16,6 +17,9 @@
   let error = $state<string | null>(null);
   let loading = $state(true);
 
+  // Selects are stateful native <select>s styled with our border /
+  // radius tokens. No need for a shadcn Select primitive — the
+  // native control already matches the dashboard's restrained tone.
   let serverFilter = $state<number | ''>('');
   let kindFilter = $state<string>('');
 
@@ -43,6 +47,7 @@
       .filter((e) => !kindFilter || e.kind.includes(kindFilter))
   );
 
+  // The kinds the backend emits — keep in sync with store.Event.Kind.
   const kinds = [
     'rescale_up',
     'rescale_down',
@@ -53,36 +58,63 @@
   ];
 </script>
 
-<div class="p-6 max-w-4xl mx-auto space-y-6">
-  <h1 class="text-3xl font-semibold text-gray-900 dark:text-white">{m.events_title()}</h1>
+<svelte:head>
+  <title>{m.events_title()} · Hetzner Rescaler</title>
+</svelte:head>
 
-  {#if error}<Alert color="danger">{error}</Alert>{/if}
+<!--
+  Events — full event log, filterable by server and kind. The live
+  store keeps the list fresh via SSE; the filters apply on the
+  client. Empty state and loading state are inline so the page never
+  blanks out.
+-->
+<div class="mx-auto max-w-4xl px-4 py-6 sm:px-6 lg:px-8">
+  <header class="mb-6">
+    <h1 class="font-display text-2xl font-semibold tracking-tight text-foreground">
+      {m.events_title()}
+    </h1>
+  </header>
 
-  <Card class="border-0">
-    <div class="grid gap-3 sm:grid-cols-2">
-      <Label>
-        {m.events_filter_server()}
-        <Select bind:value={serverFilter} class="mt-1">
-          <option value="">{m.events_filter_server_all()}</option>
-          {#each servers as s (s.id)}
-            <option value={s.id}>{s.name}</option>
-          {/each}
-        </Select>
-      </Label>
-      <Label>
-        {m.events_filter_kind()}
-        <Select bind:value={kindFilter} class="mt-1">
-          <option value="">{m.events_filter_kind_all()}</option>
-          {#each kinds as k}
-            <option value={k}>{k}</option>
-          {/each}
-        </Select>
-      </Label>
+  {#if error}
+    <Alert variant="destructive" class="mb-6">{error}</Alert>
+  {/if}
+
+  <!-- Filter row. Native <select> styled to match the inputs. The
+       fields are full-width on mobile and split 50/50 from sm up. -->
+  <section
+    aria-label="Filters"
+    class="mb-6 grid grid-cols-1 gap-4 rounded-md border border-border bg-card p-4 sm:grid-cols-2"
+  >
+    <div class="flex flex-col gap-1.5">
+      <Label for="filter-server">{m.events_filter_server()}</Label>
+      <select
+        id="filter-server"
+        bind:value={serverFilter}
+        class="flex h-9 rounded-md border border-border bg-input px-3 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+      >
+        <option value="">{m.events_filter_server_all()}</option>
+        {#each servers as s (s.id)}
+          <option value={s.id}>{s.name}</option>
+        {/each}
+      </select>
     </div>
-  </Card>
+    <div class="flex flex-col gap-1.5">
+      <Label for="filter-kind">{m.events_filter_kind()}</Label>
+      <select
+        id="filter-kind"
+        bind:value={kindFilter}
+        class="flex h-9 rounded-md border border-border bg-input px-3 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+      >
+        <option value="">{m.events_filter_kind_all()}</option>
+        {#each kinds as k}
+          <option value={k}>{k}</option>
+        {/each}
+      </select>
+    </div>
+  </section>
 
   {#if loading}
-    <p class="text-sm text-gray-600 dark:text-gray-400">{m.events_loading()}</p>
+    <p class="text-sm text-muted-foreground">{m.events_loading()}</p>
   {:else}
     <EventList events={filtered} limit={filtered.length} />
   {/if}

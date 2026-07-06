@@ -3,21 +3,15 @@
   import { api } from '$lib/api';
   import { m } from '$lib/paraglide/messages.js';
   import { eventsStream } from '$lib/stores/eventsStream.svelte';
-  import type { Project, Server, MetricsResponse } from '$lib/types';
-  import EventList from '$lib/components/EventList.svelte';
-  import ServerCard from '$lib/components/ServerCard.svelte';
+  import type { MetricsResponse } from '$lib/types';
   import KpiCard from '$lib/components/KpiCard.svelte';
   import RescalingActivityChart from '$lib/components/RescalingActivityChart.svelte';
   import CostBreakdownChart from '$lib/components/CostBreakdownChart.svelte';
   import Alert from '$lib/components/ui/alert.svelte';
 
-  let projects = $state<Project[]>([]);
-  let servers = $state<Server[]>([]);
-  let events = $derived(eventsStream.events);
   let metrics = $state<MetricsResponse | null>(null);
   let metricsLoaded = $state(false);
   let error = $state<string | null>(null);
-  let loading = $state(true);
   let chartRange = $state<'1d' | '7d' | '30d'>('7d');
 
   async function refreshMetrics() {
@@ -34,21 +28,15 @@
 
   onMount(async () => {
     try {
-      const [p, s, e] = await Promise.all([
-        api.listProjects(),
-        api.listServers(),
-        api.globalEvents({ limit: 20 })
-      ]);
-      projects = p;
-      servers = s;
-      // Seed the SSE store with the initial REST snapshot so /events
-      // and other consumers see the same context.
+      // Seed the SSE store with a recent snapshot so /events and other
+      // consumers see the same context. We don't keep the projects or
+      // servers list here — each page owns its own fetch — so a
+      // dashboard visit is just one API call + the events seed.
+      const e = await api.globalEvents({ limit: 20 });
       eventsStream.replaceAll(e);
       await refreshMetrics();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
-    } finally {
-      loading = false;
     }
   });
 
@@ -62,10 +50,11 @@
 </svelte:head>
 
 <!--
-  Dashboard. One job: tell the operator at a glance what the rescaler
-  is doing. Pages have one page, one job, one heading — no hero
-  sections, no decorative chrome. Density is the operator's right:
-  when in doubt, show the data denser.
+  Dashboard. Compact overview: the four KPIs each deep-link to the page
+  that owns the underlying data, and the charts summarize the recent
+  activity. Detail (per-project, per-server, full event log) lives on
+  /projects, /servers and /events — the dashboard does not duplicate
+  those lists.
 -->
 <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
   <header class="mb-6 flex items-end justify-between gap-3">
@@ -83,29 +72,49 @@
     <Alert variant="destructive" class="mb-6">{error}</Alert>
   {/if}
 
-  <!-- KPI row: four flat panels in a responsive grid. The numeric
-       values use tabular font so digits align across the row. -->
+  <!-- KPI row: four flat panels. The first three are deep-links into
+       the page that owns the underlying list — the dashboard never
+       duplicates those lists. The last-error card stays a passive
+       indicator: clicking it would be ambiguous (which server?). -->
   <section
     aria-label="Key metrics"
-    class="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+    class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4"
   >
-    <KpiCard
-      label={m.kpi_active_servers()}
-      value={formatRangeCount(metrics?.kpis.activeServerCount)}
-      hint={m.kpi_active_servers_hint()}
-      loading={!metricsLoaded}
-    />
-    <KpiCard
-      label={m.kpi_projects()}
-      value={formatRangeCount(metrics?.kpis.projectsWithTokenCount)}
-      hint={m.kpi_projects_hint()}
-      loading={!metricsLoaded}
-    />
-    <KpiCard
-      label={m.kpi_rescales_24h_ok()}
-      value={formatRangeCount(metrics?.kpis.rescales24hOk)}
-      loading={!metricsLoaded}
-    />
+    <a
+      href="/servers"
+      class="block rounded-md transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      aria-label="Open servers"
+    >
+      <KpiCard
+        label={m.kpi_active_servers()}
+        value={formatRangeCount(metrics?.kpis.activeServerCount)}
+        hint={m.kpi_active_servers_hint()}
+        loading={!metricsLoaded}
+      />
+    </a>
+    <a
+      href="/projects"
+      class="block rounded-md transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      aria-label="Open projects"
+    >
+      <KpiCard
+        label={m.kpi_projects()}
+        value={formatRangeCount(metrics?.kpis.projectsWithTokenCount)}
+        hint={m.kpi_projects_hint()}
+        loading={!metricsLoaded}
+      />
+    </a>
+    <a
+      href="/events"
+      class="block rounded-md transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      aria-label="Open events"
+    >
+      <KpiCard
+        label={m.kpi_rescales_24h_ok()}
+        value={formatRangeCount(metrics?.kpis.rescales24hOk)}
+        loading={!metricsLoaded}
+      />
+    </a>
     <KpiCard
       label={m.kpi_last_error()}
       value={metrics?.kpis.lastRescaleError?.error ?? m.kpi_no_error()}
@@ -119,7 +128,7 @@
   {#if metrics}
     <section
       aria-label="Charts"
-      class="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3"
+      class="grid grid-cols-1 gap-6 lg:grid-cols-3"
     >
       <div class="rounded-md border border-border bg-card p-4 lg:col-span-2">
         <div class="mb-3 flex items-center justify-between">
@@ -135,7 +144,7 @@
                 role="radio"
                 aria-checked={chartRange === opt.v}
                 onclick={() => { chartRange = opt.v as '1d' | '7d' | '30d'; refreshMetrics(); }}
-                class="rounded-sm px-2.5 py-1 font-mono uppercase tracking-wider transition-colors {chartRange === opt.v ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
+                class="rounded-sm px-2.5 py-1 font-mono uppercase tracking-wider transition-colors {chartRange === opt.v ? 'bg-card text-foreground' : 'text-muted-foreground hover:text-foreground'}"
               >
                 {opt.l}
               </button>
@@ -155,73 +164,6 @@
           <CostBreakdownChart rows={metrics.hoursAtType ?? []} />
         {/if}
       </div>
-    </section>
-  {/if}
-
-  {#if loading}
-    <p class="text-sm text-muted-foreground">{m.dashboard_loading()}</p>
-  {:else}
-    <!-- Lists: projects, servers, recent events. Each is a flat panel,
-         no internal headings hierarchy, no nested cards. The list rows
-         are separated by hairlines (use border-t on items past the
-         first), not by cards-with-padding. -->
-    <section
-      aria-label="Project summary"
-      class="mb-6 rounded-md border border-border bg-card"
-    >
-      <header class="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 class="font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          {m.dashboard_section_projects({ count: projects.length })}
-        </h2>
-      </header>
-      {#if projects.length === 0}
-        <p class="px-4 py-4 text-sm text-muted-foreground">No projects yet.</p>
-      {:else}
-        <ul>
-          {#each projects as p, i (p.id)}
-            <li class="flex items-center justify-between px-4 py-2.5 text-sm {i > 0 ? 'border-t border-border' : ''}">
-              <a href="/projects/{p.id}" class="font-medium text-foreground hover:underline">
-                {p.name}
-              </a>
-              <span class="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                {p.has_token ? m.projects_token_stored() : m.projects_no_token()}
-              </span>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    </section>
-
-    <section
-      aria-label="Server summary"
-      class="mb-6 rounded-md border border-border bg-card"
-    >
-      <header class="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 class="font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          {m.dashboard_section_servers({ count: servers.length })}
-        </h2>
-      </header>
-      {#if servers.length === 0}
-        <p class="px-4 py-4 text-sm text-muted-foreground">{m.servers_empty()}</p>
-      {:else}
-        <div class="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
-          {#each servers.slice(0, 6) as s (s.id)}
-            <ServerCard server={s} />
-          {/each}
-        </div>
-      {/if}
-    </section>
-
-    <section
-      aria-label="Recent events"
-      class="rounded-md border border-border bg-card"
-    >
-      <header class="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 class="font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          {m.dashboard_section_recent_events()}
-        </h2>
-      </header>
-      <EventList {events} limit={10} />
     </section>
   {/if}
 </div>

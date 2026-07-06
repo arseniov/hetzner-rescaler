@@ -2,16 +2,21 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { Alert, Button, Input, Label, Select } from 'flowbite-svelte';
   import { m } from '$lib/paraglide/messages.js';
   import { api, ApiError } from '$lib/api';
   import type { Server } from '$lib/types';
+  import Button from '$lib/components/ui/button.svelte';
+  import Input from '$lib/components/ui/input.svelte';
+  import Label from '$lib/components/ui/label.svelte';
+  import Alert from '$lib/components/ui/alert.svelte';
 
   let server = $state<Server | null>(null);
   let error = $state<string | null>(null);
   let saving = $state(false);
 
   // Local form state (mirrors the loaded server, with two-way bindings).
+  // Fallback chain is stored as a CSV string for input ergonomics;
+  // split on submit.
   let form = $state({
     name: '',
     label: '',
@@ -62,66 +67,94 @@
       server = updated;
       await goto(`/servers/${serverId}`);
     } catch (err) {
-      error = err instanceof ApiError ? err.message : String(err);
+      error = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err);
     } finally {
       saving = false;
     }
   }
 </script>
 
-<div class="p-6 max-w-2xl mx-auto space-y-4">
-  <h1 class="text-3xl font-semibold text-gray-900 dark:text-white">
-    {m.server_edit_title()}
-  </h1>
+<svelte:head>
+  <title>{m.server_edit_title()} · Hetzner Rescaler</title>
+</svelte:head>
+
+<!--
+  Edit server — single-column form. The fallback chain field is a CSV
+  input rather than a chip-input; CSV matches the way operators
+  actually copy/paste from documentation and avoids dragging in a
+  combobox primitive.
+-->
+<div class="mx-auto max-w-2xl px-4 py-6 sm:px-6 lg:px-8">
+  <header class="mb-6">
+    <h1 class="font-display text-2xl font-semibold tracking-tight text-foreground">
+      {m.server_edit_title()}
+    </h1>
+  </header>
+
   {#if error}
-    <Alert color="danger">{error}</Alert>
+    <Alert variant="destructive" class="mb-6">{error}</Alert>
   {/if}
 
-  <form onsubmit={submit} class="space-y-3">
-    <Label class="space-y-1">
-      <span>{m.server_edit_field_name()}</span>
-      <Input bind:value={form.name} required />
-    </Label>
-    <Label class="space-y-1">
-      <span>{m.server_edit_field_label()}</span>
-      <Input bind:value={form.label} />
-    </Label>
-    <div class="grid grid-cols-2 gap-3">
-      <Label class="space-y-1">
-        <span>{m.server_edit_field_base()}</span>
-        <Input bind:value={form.base_server_type} required />
-      </Label>
-      <Label class="space-y-1">
-        <span>{m.server_edit_field_top()}</span>
-        <Input bind:value={form.top_server_type} required />
-      </Label>
+  <form onsubmit={submit} class="space-y-4">
+    <div class="flex flex-col gap-1.5">
+      <Label for="f-name">{m.server_edit_field_name()}</Label>
+      <Input id="f-name" bind:value={form.name} required />
     </div>
-    <Label class="space-y-1">
-      <span>{m.server_edit_field_fallback()}</span>
+
+    <div class="flex flex-col gap-1.5">
+      <Label for="f-label">{m.server_edit_field_label()}</Label>
+      <Input id="f-label" bind:value={form.label} />
+    </div>
+
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="flex flex-col gap-1.5">
+        <Label for="f-base">{m.server_edit_field_base()}</Label>
+        <Input id="f-base" bind:value={form.base_server_type} required />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <Label for="f-top">{m.server_edit_field_top()}</Label>
+        <Input id="f-top" bind:value={form.top_server_type} required />
+      </div>
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <Label for="f-chain">{m.server_edit_field_fallback()}</Label>
       <Input
+        id="f-chain"
         bind:value={form.fallback_chain_csv}
         required
         placeholder={m.server_edit_field_fallback_placeholder()}
       />
-    </Label>
-    <Label class="space-y-1">
-      <span>{m.server_edit_field_mode()}</span>
-      <Select bind:value={form.mode}>
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <Label for="f-mode">{m.server_edit_field_mode()}</Label>
+      <select
+        id="f-mode"
+        bind:value={form.mode}
+        class="flex h-9 rounded-md border border-border bg-input px-3 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+      >
         <option value="manual">{m.servers_mode_manual()}</option>
         <option value="auto_promote">{m.servers_mode_auto_promote()}</option>
         <option value="scheduled">{m.servers_mode_scheduled()}</option>
-      </Select>
-    </Label>
-    <Label class="space-y-1">
-      <span>{m.server_edit_field_timezone()}</span>
-      <Input bind:value={form.timezone} required placeholder={m.server_edit_field_timezone_placeholder()} />
-    </Label>
+      </select>
+    </div>
 
-    <div class="flex gap-2">
-      <Button type="submit" color="brand" disabled={saving}>
+    <div class="flex flex-col gap-1.5">
+      <Label for="f-tz">{m.server_edit_field_timezone()}</Label>
+      <Input
+        id="f-tz"
+        bind:value={form.timezone}
+        required
+        placeholder={m.server_edit_field_timezone_placeholder()}
+      />
+    </div>
+
+    <div class="flex gap-2 border-t border-border pt-4">
+      <Button variant="primary" type="submit" disabled={saving}>
         {saving ? m.server_edit_saving() : m.server_edit_save()}
       </Button>
-      <Button color="alternative" onclick={() => goto(`/servers/${serverId}`)}>
+      <Button variant="ghost" onclick={() => goto(`/servers/${serverId}`)}>
         {m.server_edit_cancel()}
       </Button>
     </div>

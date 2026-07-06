@@ -4,8 +4,8 @@
   let { status }: Props = $props();
 
   // Compact status indicator — a single dot in the relevant token
-  // colour, followed by an ALL-CAPS label. No flowbite Badge, no
-  // filled background: this is a row in a data table, not a callout.
+  // colour, followed by an ALL-CAPS label. No filled background: this
+  // is a row in a data table, not a callout.
   const tone: Record<Status, string> = {
     ok: 'bg-success',
     degraded: 'bg-warning',
