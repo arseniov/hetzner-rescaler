@@ -82,6 +82,9 @@
       error = e instanceof Error ? e.message : String(e);
     }
   }
+
+  // Initial load — kicks the fetch so the list renders on mount.
+  onMount(refresh);
 </script>
 
 <svelte:head>

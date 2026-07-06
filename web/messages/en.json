@@ -137,8 +137,8 @@
   "kpi_projects": "Projects",
   "kpi_projects_hint": "Projects with a stored Hetzner API token",
   "kpi_rescales_24h_ok": "Rescales (24h, successful)",
-  "kpi_last_error": "Last rescale error",
-  "kpi_no_error": "No recent failures",
+  "dashboard_last_events": "Last events",
+  "dashboard_no_events": "No events yet.",
   "kpi_loading": "Loading…",
   "dashboard_chart_activity": "Rescaling activity",
   "dashboard_chart_cost": "Cost breakdown (€ / month)",
@@ -164,6 +164,9 @@
   "servers_status_col_name": "Server",
   "servers_status_col_mode": "Mode",
   "servers_status_col_top": "Top type",
+  "servers_status_col_current": "Current",
+  "servers_status_col_last_activity": "Last activity",
+  "servers_status_no_activity": "No activity",
   "servers_status_col_window": "Active window",
   "servers_status_col_status": "Status"
 }

@@ -3,7 +3,7 @@
   import { api } from '$lib/api';
   import { m } from '$lib/paraglide/messages.js';
   import { eventsStream } from '$lib/stores/eventsStream.svelte';
-  import type { MetricsResponse } from '$lib/types';
+  import type { MetricsResponse, Project, Server, RescaleEvent } from '$lib/types';
   import KpiCard from '$lib/components/KpiCard.svelte';
   import RescalingActivityChart from '$lib/components/RescalingActivityChart.svelte';
   import CostBreakdownChart from '$lib/components/CostBreakdownChart.svelte';
@@ -13,6 +13,13 @@
   let metricsLoaded = $state(false);
   let error = $state<string | null>(null);
   let chartRange = $state<'1d' | '7d' | '30d'>('7d');
+
+  // Lookup tables for the "Last events" panel: project by id, server
+  // by id (carries project_id), so a single event row can show both
+  // server name and the parent project name. Populated in onMount —
+  // before fetch completes the row falls back to placeholder strings.
+  let projects = $state<Project[]>([]);
+  let servers = $state<Server[]>([]);
 
   async function refreshMetrics() {
     try {
@@ -29,11 +36,18 @@
   onMount(async () => {
     try {
       // Seed the SSE store with a recent snapshot so /events and other
-      // consumers see the same context. We don't keep the projects or
-      // servers list here — each page owns its own fetch — so a
-      // dashboard visit is just one API call + the events seed.
-      const e = await api.globalEvents({ limit: 20 });
+      // consumers see the same context. In parallel we fetch the
+      // project + server lists so the "Last events" panel can render
+      // human-readable names next to each event row without a second
+      // round trip.
+      const [e, p, s] = await Promise.all([
+        api.globalEvents({ limit: 20 }),
+        api.listProjects(),
+        api.listServers()
+      ]);
       eventsStream.replaceAll(e);
+      projects = p;
+      servers = s;
       await refreshMetrics();
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -42,6 +56,37 @@
 
   function formatRangeCount(n: number | null | undefined): string {
     return n === null || n === undefined ? '—' : String(n);
+  }
+
+  // Three most recent events — same order as the SSE store (newest
+  // first). Capped at three so the panel stays the same height as the
+  // surrounding KPI cards.
+  let lastEvents = $derived(eventsStream.events.slice(0, 3));
+
+  // O(1) server_id → context lookup. Built fresh from the latest
+  // projects/servers lists; if either list is empty the field shows
+  // a neutral placeholder so the row still renders.
+  let serverCtx = $derived.by(() => {
+    const projById = new Map(projects.map((p) => [p.id, p]));
+    const ctx = new Map<number, { serverName: string; projectName: string }>();
+    for (const s of servers) {
+      ctx.set(s.id, {
+        serverName: s.name,
+        projectName: projById.get(s.project_id)?.name ?? '—'
+      });
+    }
+    return ctx;
+  });
+
+  function ctxFor(e: RescaleEvent) {
+    return serverCtx.get(e.server_id) ?? { serverName: `#${e.server_id}`, projectName: '—' };
+  }
+
+  // Compact "12:34" timestamp — the panel is dense; the full datetime
+  // lives on /events.
+  function fmtTime(iso: string): string {
+    const d = new Date(iso);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 </script>
 
@@ -74,8 +119,9 @@
 
   <!-- KPI row: four flat panels. The first three are deep-links into
        the page that owns the underlying list — the dashboard never
-       duplicates those lists. The last-error card stays a passive
-       indicator: clicking it would be ambiguous (which server?). -->
+       duplicates those lists. The fourth slot is a passive "Last
+       events" panel: deep-linking it would be ambiguous (which
+       server?), but each row inside links to its own server. -->
   <section
     aria-label="Key metrics"
     class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4"
@@ -115,11 +161,51 @@
         loading={!metricsLoaded}
       />
     </a>
-    <KpiCard
-      label={m.kpi_last_error()}
-      value={metrics?.kpis.lastRescaleError?.error ?? m.kpi_no_error()}
-      loading={!metricsLoaded}
-    />
+
+    <!--
+      Last events panel. Sits in the KPI grid in place of the
+      one-off "Last rescale error" indicator so the operator sees the
+      most recent activity at a glance. Three compact rows, each
+      linking to the server that emitted the event. Each row carries:
+      status dot (success / destructive), server name + kind, parent
+      project name, and the HH:MM timestamp. Deeper detail (full
+      datetime, error message, from/to type) lives on /events.
+    -->
+    <section
+      aria-label={m.dashboard_last_events()}
+      class="flex flex-col gap-1.5 rounded-md border border-border bg-card px-4 py-3"
+    >
+      <p class="text-sm text-muted-foreground">{m.dashboard_last_events()}</p>
+      {#if lastEvents.length === 0}
+        <p class="text-xs text-muted-foreground">{m.dashboard_no_events()}</p>
+      {:else}
+        <ul class="divide-y divide-border">
+          {#each lastEvents as e (e.id)}
+            {@const ctx = ctxFor(e)}
+            <li class="flex items-center gap-2 py-1 text-sm">
+              <span
+                class="inline-block size-1.5 shrink-0 rounded-full {e.ok ? 'bg-success' : 'bg-destructive'}"
+                aria-hidden="true"
+              ></span>
+              <a
+                href="/servers/{e.server_id}"
+                class="min-w-0 flex-1 truncate text-foreground hover:underline"
+              >
+                <span class="font-medium">{ctx.serverName}</span>
+                <span class="mx-1 text-foreground/30">·</span>
+                <span class="font-mono text-xs text-muted-foreground">{e.kind}</span>
+              </a>
+              <span class="hidden font-mono text-xs text-muted-foreground sm:inline">
+                {ctx.projectName}
+              </span>
+              <span class="shrink-0 font-mono text-xs tabular text-muted-foreground">
+                {fmtTime(e.started_at)}
+              </span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
   </section>
 
   <!-- Charts row. Two panels separated by a hairline; activity takes
