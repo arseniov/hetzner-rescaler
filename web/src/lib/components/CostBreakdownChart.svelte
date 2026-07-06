@@ -10,7 +10,7 @@
   let chart: any = null;
   let isDark = $state(false);
 
-  const total = $derived(rows.reduce((acc, r) => acc + r.costEur, 0));
+  const total = $derived(rows.reduce((acc, r) => acc + r.cost_eur, 0));
 
   function token(name: string, fallback: string): string {
     if (typeof document === 'undefined') return fallback;
@@ -26,8 +26,8 @@
         background: 'transparent',
         foreColor: token('--color-chart-axis', '#94a3b8')
       },
-      series: rs.map((r) => r.costEur),
-      labels: rs.map((r) => r.serverName),
+      series: rs.map((r) => r.cost_eur),
+      labels: rs.map((r) => r.server_name),
       colors: [token('--color-chart-series-2', '#f5a86b')],
       legend: {
         position: 'bottom',

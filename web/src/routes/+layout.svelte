@@ -1,24 +1,42 @@
 <script lang="ts">
   import '../app.css';
   import { onNavigate, afterNavigate } from '$app/navigation';
+  import { browser } from '$app/environment';
   import { page } from '$app/stores';
-  import { Menu } from 'lucide-svelte';
+  import { Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-svelte';
   import { ensureSession, isAuthenticated } from '$lib/stores/auth.svelte';
   import { eventsStream } from '$lib/stores/eventsStream.svelte';
   import Sidebar from '$lib/components/Sidebar.svelte';
 
   let { children } = $props();
 
-  // Mobile drawer state. Owned at the layout so the hamburger (rendered
-  // here) and the Sidebar component share the same instance. `open` is
-  // local $state; Sidebar reads it as a prop.
+  // Two pieces of sidebar state, each meaningful on its own viewport:
+  //   - drawerOpen:        mobile-only Dialog drawer
+  //   - sidebarCollapsed:  desktop-only "hide the fixed column"
+  // The single toggle button in the header dispatches to whichever
+  // one is appropriate for the current viewport — see toggleSidebar().
   let drawerOpen = $state(false);
-  const closeDrawer = () => (drawerOpen = false);
-  const toggleDrawer = () => (drawerOpen = !drawerOpen);
+  let sidebarCollapsed = $state(false);
 
-  // Short label for the mobile top bar. Derived from the current URL
-  // path — keeps the bar useful without forcing each page to pass a
-  // title down. Falls back to the app name on the dashboard.
+  const closeDrawer = () => (drawerOpen = false);
+  const closeDesktopSidebar = () => (sidebarCollapsed = true);
+
+  // The viewport dispatch happens at click time. We don't bind to a
+  // resize listener because the toggle is a deliberate operator action
+  // (not a reactive system): the viewport check only governs which
+  // state flips when the button is pressed, not which state is read on
+  // every render.
+  function toggleSidebar() {
+    if (browser && window.matchMedia('(min-width: 768px)').matches) {
+      sidebarCollapsed = !sidebarCollapsed;
+    } else {
+      drawerOpen = !drawerOpen;
+    }
+  }
+
+  // Short label for the top bar. Derived from the current URL path —
+  // keeps the bar useful without forcing each page to pass a title
+  // down. Falls back to the app name on the dashboard.
   let pageTitle = $derived.by(() => {
     const path = $page.url.pathname;
     if (path === '/') return 'Dashboard';
@@ -60,47 +78,68 @@
 <div class="min-h-screen bg-background text-foreground">
   {#if isAuthenticated()}
     <!--
-      MOBILE TOP BAR — always rendered on mobile when the operator is
-      signed in. Holds the hamburger that toggles the sidebar drawer.
+      TOP BAR — visible on every screen size, sticky at the top. On
+      mobile it carries the page title so the operator always knows
+      where they are without opening the drawer. On desktop it carries
+      only the sidebar toggle: the page's own <h1> sits in the content
+      column as the primary heading, so duplicating it here would be
+      redundant.
 
-      Why a sticky bar instead of a fixed-position button floating over
-      content:
-        1. The bar reserves its own height (h-12), so a page's `h1` sits
-           below it and never overlaps the hamburger — no per-page
-           padding hack needed.
-        2. `sticky top-0` keeps the bar pinned while the user scrolls a
-           long list (servers, events) so navigation is always one tap
-           away.
-        3. The bar also carries the page label so the operator always
-           knows where they are without scanning the drawer.
-
-      The bar hides from `md` upward because the sidebar becomes a
-      fixed column on desktop and a floating trigger would compete
-      with it.
+      The sidebar toggle is always rendered (no `md:hidden`). The button
+      dispatches to the mobile drawer state or the desktop collapse
+      state based on viewport — see toggleSidebar().
     -->
     <header
-      class="sticky top-0 z-20 flex h-12 items-center gap-3 border-b border-border bg-background/95 px-3 backdrop-blur md:hidden"
+      class="sticky top-0 z-20 flex h-12 items-center gap-3 border-b border-border bg-background/95 px-3 backdrop-blur"
     >
       <button
         type="button"
-        onclick={toggleDrawer}
-        aria-label="Open navigation"
-        aria-expanded={drawerOpen}
+        onclick={toggleSidebar}
+        aria-label="Toggle navigation"
+        aria-expanded={!sidebarCollapsed}
         class="inline-flex size-8 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
       >
-        <Menu class="size-4" strokeWidth={1.5} aria-hidden="true" />
+        {#if sidebarCollapsed}
+          <PanelLeftOpen class="size-4" strokeWidth={1.5} aria-hidden="true" />
+        {:else}
+          <PanelLeftClose class="size-4" strokeWidth={1.5} aria-hidden="true" />
+        {/if}
       </button>
+      <!-- Page title — shown on every screen so the operator knows
+           where they are. The dashboard h1 is also visible in the
+           content column on desktop; that's intentional (page title
+           in the chrome is a navigation aid, the in-page h1 is the
+           section heading). -->
       <span class="font-display text-sm font-semibold tracking-tight text-foreground truncate">
         {pageTitle}
       </span>
     </header>
 
-    <Sidebar isOpen={drawerOpen} closeSidebar={closeDrawer} />
+    <!--
+      Sidebar. The component handles both modes:
+        - Mobile drawer: `isOpen` flips the Dialog open/closed.
+        - Desktop fixed column: hidden when `collapsed` is true.
 
-    <!-- On desktop the sidebar is fixed at w-64; `md:ml-64` clears the
-         content column. On mobile the sidebar overlays the canvas (a
-         dialog drawer), so no offset is needed. -->
-    <main class="min-w-0 min-h-screen md:ml-64">
+      The component receives both props so the same instance handles
+      both viewports without duplication.
+    -->
+    <Sidebar
+      isOpen={drawerOpen}
+      collapsed={sidebarCollapsed}
+      closeSidebar={closeDrawer}
+      closeDesktopSidebar={closeDesktopSidebar}
+    />
+
+    <!--
+      Main content column. On desktop the sidebar reserves w-64 of the
+      left edge; `md:ml-64` clears that space. When the sidebar is
+      collapsed on desktop, the margin drops to 0 so the content
+      expands. On mobile the sidebar overlays the canvas (a Dialog
+      drawer), so no offset is ever needed.
+    -->
+    <main
+      class="min-w-0 min-h-screen {sidebarCollapsed ? '' : 'md:ml-64'} transition-[margin]"
+    >
       {@render children?.()}
     </main>
   {:else}

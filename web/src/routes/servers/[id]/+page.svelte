@@ -9,6 +9,8 @@
   import Button from '$lib/components/ui/button.svelte';
   import Alert from '$lib/components/ui/alert.svelte';
   import Tabs from '$lib/components/ui/tabs.svelte';
+  import Dialog from '$lib/components/ui/dialog.svelte';
+  import StatusBadge, { type Status } from '$lib/components/StatusBadge.svelte';
 
   let server = $state<Server | null>(null);
   let events = $state<RescaleEvent[]>([]);
@@ -17,6 +19,20 @@
   let loading = $state(true);
   let busy = $state<'up' | 'down' | 'promote' | 'demote' | null>(null);
   let activeTab = $state<'overview' | 'windows' | 'events'>('overview');
+
+  // Rescale-confirmation modal. Rescaling a server costs money (up)
+  // or can cause outages (down), so the action button only stages the
+  // confirmation — the actual API call fires from the modal's
+  // "Rescale" button. The direction is held in a separate $state so
+  // the dialog can render the right copy and we never have to peek
+  // at the DOM to know which path we're on.
+  let confirmOpen = $state(false);
+  let confirmDirection = $state<'up' | 'down'>('up');
+
+  function askRescale(direction: 'up' | 'down') {
+    confirmDirection = direction;
+    confirmOpen = true;
+  }
 
   let serverId = $derived(Number($page.params.id));
 
@@ -36,11 +52,12 @@
 
   onMount(refresh);
 
-  async function rescale(direction: 'up' | 'down') {
-    busy = direction;
+  async function commitRescale() {
+    busy = confirmDirection;
+    confirmOpen = false;
     error = null;
     try {
-      await api.rescale(serverId, { direction, confirm: true });
+      await api.rescale(serverId, { direction: confirmDirection, confirm: true });
       await refresh();
     } catch (err) {
       error = err instanceof ApiError ? err.message : String(err);
@@ -83,6 +100,22 @@
     }
     return on.length === 7 ? m.server_detail_window_every_day() : on.join(', ') || '—';
   }
+
+  // Live state, mirrored from ServerCard so the server page can render
+  // it without re-deriving twice. `current_type` is the Hetzner
+  // authoritative view (might be null on a freshly-imported server
+  // before the engine has polled it); we fall back to top_server_type
+  // when null. `status` is the Hetzner lifecycle state; we fall back
+  // to 'unknown' when missing so the badge always has a label.
+  let currentType = $derived(server?.current_type ?? server?.top_server_type ?? null);
+  let liveStatus = $derived<Status>((server?.status as Status | undefined) ?? 'unknown');
+
+  // Compact last-events row: click any row (or the header's "View all"
+  // link) to jump to the Events tab. The Overview tab is now a single
+  // screen of facts + actions + activity, with detail one click away.
+  function showEvents() {
+    activeTab = 'events';
+  }
 </script>
 
 <svelte:head>
@@ -90,10 +123,10 @@
 </svelte:head>
 
 <!--
-  Server detail — three tabs: Overview (server facts + actions),
-  Windows (scheduled rescales), Events (live log). The tabs are
-  kept shallow so the operator can land on the right context in one
-  click.
+  Server detail — three tabs: Overview (server facts, action buttons,
+  current state, last events), Windows (scheduled rescales), Events
+  (live log). The tabs are kept shallow so the operator can land on
+  the right context in one click.
 -->
 <div class="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
   {#if error && !server}
@@ -105,14 +138,6 @@
   {:else if !server}
     <Alert variant="destructive">{m.server_detail_not_found()}</Alert>
   {:else}
-    <!--
-      Capture `server` into a non-null local alias. The tabs snippet
-      is rendered as a separate closure so TypeScript's flow
-      narrowing from the `{:else if !server}` guard doesn't survive
-      across the snippet boundary; the `!` lets us tell the compiler
-      "we've already checked above, give me a non-null view of this
-      value inside the snippet".
-    -->
     {@const s = server}
 
     <!-- Header. Title + metadata in a single row. Edit link sits on
@@ -154,12 +179,47 @@
       {#snippet children(tab)}
         {#if tab === 'overview'}
           <!--
-            Overview: definition-list grid for the server facts, then
-            a row of action buttons. The promote / demote buttons
-            only render for auto_promote mode; for other modes the
-            rescale pair is sufficient.
+            Overview: three stacked panels —
+              1. Current state (live Hetzner snapshot)
+              2. Definition list + action buttons
+              3. Compact recent events list (clicking jumps to Events)
+
+            Promote/demote only render for auto_promote mode; for other
+            modes the rescale pair is sufficient.
           -->
-          <section class="rounded-md border border-border bg-card p-4">
+
+          <!-- Current state panel. Shows the live Hetzner-reported
+               status and current type. Falls back to event-derived or
+               configured values when the live fields are null so the
+               panel never blanks. -->
+          <section
+            aria-label={m.server_detail_current_state()}
+            class="mb-4 rounded-md border border-border bg-card p-4"
+          >
+            <h2 class="mb-3 font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+              {m.server_detail_current_state()}
+            </h2>
+            <dl class="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+              <div>
+                <dt class="text-xs uppercase tracking-wider text-muted-foreground">
+                  {m.server_detail_current_status()}
+                </dt>
+                <dd class="mt-1.5">
+                  <StatusBadge status={liveStatus} />
+                </dd>
+              </div>
+              <div>
+                <dt class="text-xs uppercase tracking-wider text-muted-foreground">
+                  {m.server_detail_current_type()}
+                </dt>
+                <dd class="mt-1.5 font-mono text-foreground">
+                  {currentType ?? '—'}
+                </dd>
+              </div>
+            </dl>
+          </section>
+
+          <section class="mb-4 rounded-md border border-border bg-card p-4">
             <dl class="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
               <div>
                 <dt class="text-xs uppercase tracking-wider text-muted-foreground">
@@ -189,12 +249,12 @@
               </div>
             </dl>
 
-            <div class="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
+            <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
               <Button
                 variant="primary"
                 size="sm"
                 disabled={busy !== null}
-                onclick={() => rescale('up')}
+                onclick={() => askRescale('up')}
               >
                 <ArrowUp class="size-3.5" strokeWidth={1.75} aria-hidden="true" />
                 {busy === 'up' ? '…' : m.server_detail_rescale_up()}
@@ -203,7 +263,7 @@
                 variant="default"
                 size="sm"
                 disabled={busy !== null}
-                onclick={() => rescale('down')}
+                onclick={() => askRescale('down')}
               >
                 <ArrowDown class="size-3.5" strokeWidth={1.75} aria-hidden="true" />
                 {busy === 'down' ? '…' : m.server_detail_rescale_down()}
@@ -228,11 +288,61 @@
                   {busy === 'demote' ? '…' : m.server_detail_demote()}
                 </Button>
               {/if}
-              <Button variant="default" size="sm" href="/servers/{s.id}/windows">
-                <Calendar class="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-                {m.server_detail_edit_windows()}
+              <!-- Icon-only "Edit windows" button. The label lives in
+                   aria-label so screen readers still get the full
+                   context; the visible glyph alone is enough for
+                   operators who already know the affordance. -->
+              <Button
+                variant="default"
+                size="icon"
+                href="/servers/{s.id}/windows"
+                aria-label={m.server_detail_edit_windows()}
+              >
+                <Calendar class="size-4" strokeWidth={1.75} aria-hidden="true" />
               </Button>
             </div>
+          </section>
+
+          <!-- Compact recent events. Five rows is enough to glance at
+               "anything blowing up lately?" without scrolling. The
+               entire panel header is clickable and switches to the
+               Events tab, where the full log lives. -->
+          <section class="rounded-md border border-border bg-card p-4">
+            <header class="mb-3 flex items-center justify-between gap-3">
+              <h2 class="font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+                {m.server_detail_recent_events_compact()}
+              </h2>
+              <button
+                type="button"
+                onclick={showEvents}
+                class="font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {m.server_detail_view_all_events()} →
+              </button>
+            </header>
+            {#if events.length === 0}
+              <p class="text-sm text-muted-foreground">{m.server_detail_events_empty()}</p>
+            {:else}
+              <ul class="divide-y divide-border rounded-md border border-border">
+                {#each events.slice(0, 5) as e (e.id)}
+                  <li class="flex items-center justify-between px-3 py-2 text-sm">
+                    <button
+                      type="button"
+                      onclick={showEvents}
+                      class="min-w-0 flex-1 truncate text-left {e.ok ? 'text-foreground' : 'text-destructive'} hover:underline"
+                    >
+                      {e.kind}
+                      {#if e.from_type && e.to_type}
+                        ({e.from_type} → {e.to_type})
+                      {/if}
+                    </button>
+                    <span class="ml-3 font-mono text-xs text-muted-foreground">
+                      {new Date(e.started_at).toLocaleString()}
+                    </span>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
           </section>
         {:else if tab === 'windows'}
           <section class="rounded-md border border-border bg-card">
@@ -291,3 +401,37 @@
     </Tabs>
   {/if}
 </div>
+
+<!--
+  Rescale-confirmation modal. Rescaling a server costs money (up) or
+  can cause outages (down); an accidental click would be expensive.
+  The modal title and description flip based on the staged direction
+  so the operator sees the exact consequence they're about to commit.
+-->
+<Dialog
+  bind:open={confirmOpen}
+  title={confirmDirection === 'up'
+    ? m.server_detail_rescale_up_confirm_title({ name: server?.name ?? '' })
+    : m.server_detail_rescale_down_confirm_title({ name: server?.name ?? '' })}
+  description={confirmDirection === 'up'
+    ? m.server_detail_rescale_up_confirm_description()
+    : m.server_detail_rescale_down_confirm_description()}
+  size="md"
+>
+  <p class="text-sm text-muted-foreground">
+    {#if confirmDirection === 'up'}
+      <span class="font-mono">{server?.top_server_type ?? '—'}</span>
+    {:else}
+      <span class="font-mono">{server?.base_server_type ?? '—'}</span>
+    {/if}
+  </p>
+
+  {#snippet footer()}
+    <Button variant="ghost" onclick={() => (confirmOpen = false)} disabled={busy !== null}>
+      {m.server_detail_cancel()}
+    </Button>
+    <Button variant="primary" onclick={commitRescale} disabled={busy !== null}>
+      {m.server_detail_confirm_action()}
+    </Button>
+  {/snippet}
+</Dialog>

@@ -81,11 +81,17 @@ export interface CreateProjectRequest { name: string; hcloud_token: string }
  * is set when the initial sync failed partway; the UI surfaces it as
  * a non-destructive warning so the operator knows the project exists
  * but the servers may be incomplete.
+ *
+ * `added` and `skipped` are nullable on the wire: when the initial
+ * sync fails before the loop completes (most commonly an invalid
+ * Hetzner token), the Go handler returns `null` for both arrays and
+ * surfaces the failure through `last_error` instead. Consumers should
+ * treat null as "no sync data" — see /projects for the pattern.
  */
 export interface CreateProjectResult {
   project: Project;
-  added: Server[];
-  skipped: Server[];
+  added: Server[] | null;
+  skipped: Server[] | null;
   last_error?: string;
 }
 export interface CreateServerRequest {
@@ -120,17 +126,41 @@ export interface RescaleRequest { direction: 'up' | 'down'; confirm: boolean }
 export interface ConfirmRequest { confirm: boolean }
 export interface RefreshResponse { added: Server[]; skipped: Server[] }
 
-export interface RescaleCountsByDayRow { date: string; ok: number; failed: number; total: number }
-export interface HoursAtTypeRow { serverId: number; serverName: string; base: number; top: number; fallback: number; costEur: number }
-export interface SuccessRateRow { serverId: number; serverName: string; ok: number; total: number; okRate: number }
+/**
+ * Metrics types — JSON shapes returned by GET /api/metrics. Field names
+ * are snake_case to match the Go handler's JSON tags directly (the rest
+ * of the Go API is snake_case; mixing camelCase here silently dropped
+ * every KPI to "—"). See internal/api/handlers_metrics.go.
+ */
+export interface RescaleCountsByDayRow {
+  date: string;
+  ok: number;
+  failed: number;
+  total: number;
+}
+export interface HoursAtTypeRow {
+  server_id: number;
+  server_name: string;
+  base: number;
+  top: number;
+  fallback: number;
+  cost_eur: number;
+}
+export interface SuccessRateRow {
+  server_id: number;
+  server_name: string;
+  ok: number;
+  total: number;
+  ok_rate: number;
+}
 export interface MetricsKpis {
-  activeServerCount: number;
-  projectsWithTokenCount: number;
-  rescales24hOk: number;
-  lastRescaleError: null | RescaleError;
+  active_server_count: number;
+  projects_with_token_count: number;
+  rescales_24h_ok: number;
+  last_rescale_error: null | RescaleError;
 }
 export interface RescaleError {
-  serverId: number;
+  server_id: number;
   kind: string;
   at: string;
   error: string;
@@ -140,7 +170,7 @@ export interface MetricsResponse {
   from: string;
   to: string;
   kpis: MetricsKpis;
-  rescaleCountsByDay: RescaleCountsByDayRow[];
-  hoursAtType: HoursAtTypeRow[];
-  successRateByServer: SuccessRateRow[];
+  rescale_counts_by_day: RescaleCountsByDayRow[];
+  hours_at_type: HoursAtTypeRow[];
+  success_rate_by_server: SuccessRateRow[];
 }
