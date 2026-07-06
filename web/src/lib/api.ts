@@ -50,7 +50,8 @@ export async function apiFetch<T = unknown>(
 
 import type {
   Project, Server, Window_ as Window, RescaleEvent,
-  CreateProjectRequest, CreateServerRequest, UpdateServerRequest,
+  CreateProjectRequest, CreateProjectResult,
+  CreateServerRequest, UpdateServerRequest,
   CreateWindowRequest, RescaleRequest, ConfirmRequest,
   RefreshResponse, ServerType
 } from './types';
@@ -59,7 +60,7 @@ export const api = {
   healthz: () => apiFetch<{ status: string }>('/api/healthz'),
   listProjects: () => apiFetch<Project[]>('/api/projects'),
   createProject: (body: CreateProjectRequest) =>
-    apiFetch<Project>('/api/projects', { method: 'POST', body: JSON.stringify(body) }),
+    apiFetch<CreateProjectResult>('/api/projects', { method: 'POST', body: JSON.stringify(body) }),
   deleteProject: (id: number) =>
     apiFetch<void>(`/api/projects/${id}`, { method: 'DELETE' }),
   refreshProject: (id: number) =>

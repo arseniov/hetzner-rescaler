@@ -4,7 +4,7 @@
   import { api } from '$lib/api';
   import type { Server } from '$lib/types';
   import Alert from '$lib/components/ui/alert.svelte';
-  import StatusBadge from '$lib/components/StatusBadge.svelte';
+  import StatusBadge, { type Status } from '$lib/components/StatusBadge.svelte';
 
   let servers = $state<Server[]>([]);
   let error = $state<string | null>(null);
@@ -17,6 +17,14 @@
     auto_promote: m.servers_mode_auto_promote,
     scheduled: m.servers_mode_scheduled
   } as const;
+
+  // /servers is the inventory list, not the triage list (that's
+  // /status/servers). We show the API's `current_type` so the
+  // operator can see at a glance which size each server is actually
+  // running, with the configured base → top range alongside.
+  function statusFor(s: Server): Status {
+    return (s.status as Status) ?? 'unknown';
+  }
 
   onMount(async () => {
     try {
@@ -33,10 +41,10 @@
 
 <!--
   Servers — flat list of every server the rescaler knows about. Each
-  row deep-links to the server's detail page. The "status" column is
-  fixed at OK for now (the live failure tracking lives on
-  /status/servers); once the per-server status API exists we'll swap
-  the literal 'ok' for a real value here.
+  row deep-links to the server's detail page. The status column now
+  reads the API's `server.status` (populated live from Hetzner); the
+  Current column shows the live `server.current_type` so the operator
+  sees what size is actually running, not just the configured top.
 -->
 <div class="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
   <header class="mb-6">
@@ -59,19 +67,19 @@
         same hairline underline as the dashboard's KPI panel.
       -->
       <div
-        class="hidden border-b border-border px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground sm:grid sm:grid-cols-[1fr_5rem_9rem_7rem_7rem] sm:gap-3"
+        class="hidden border-b border-border px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground sm:grid sm:grid-cols-[1fr_5rem_7rem_7rem_7rem] sm:gap-3"
       >
         <span>{m.servers_col_name()}</span>
         <span class="text-right">{m.servers_col_project()}</span>
         <span>{m.servers_col_types()}</span>
-        <span>{m.servers_col_mode()}</span>
+        <span>Current</span>
         <span>{m.servers_col_status()}</span>
       </div>
       <ul>
         {#each servers as s, i (s.id)}
-          {@const status = 'ok' as const}
+          {@const status = statusFor(s)}
           <li
-            class="px-4 py-3 text-sm sm:grid sm:grid-cols-[1fr_5rem_9rem_7rem_7rem] sm:items-center sm:gap-3 {i > 0 ? 'border-t border-border' : ''}"
+            class="px-4 py-3 text-sm sm:grid sm:grid-cols-[1fr_5rem_7rem_7rem_7rem] sm:items-center sm:gap-3 {i > 0 ? 'border-t border-border' : ''}"
           >
             <a
               href="/servers/{s.id}"
@@ -85,8 +93,8 @@
             <span class="mt-1 block truncate font-mono text-xs text-muted-foreground sm:mt-0">
               {s.base_server_type} <span class="text-foreground/40">→</span> {s.top_server_type}
             </span>
-            <span class="mt-1 block text-xs text-muted-foreground sm:mt-0">
-              {modeLabel[s.mode]()}
+            <span class="mt-1 block font-mono text-xs font-semibold tabular text-foreground sm:mt-0">
+              {s.current_type ?? s.top_server_type}
             </span>
             <span class="mt-1 block sm:mt-0">
               <StatusBadge {status} />

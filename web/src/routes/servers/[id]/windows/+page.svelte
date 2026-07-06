@@ -10,6 +10,7 @@
   import Label from '$lib/components/ui/label.svelte';
   import Alert from '$lib/components/ui/alert.svelte';
   import Dialog from '$lib/components/ui/dialog.svelte';
+  import ServerTypeSelect from '$lib/components/ServerTypeSelect.svelte';
 
   let server = $state<Server | null>(null);
   let windows = $state<Window[]>([]);
@@ -281,7 +282,12 @@
 
     <div class="flex flex-col gap-1.5">
       <Label for="w-target">{m.windows_field_target()}</Label>
-      <Input id="w-target" bind:value={newTarget} required placeholder="cpx31" />
+      <!--
+        ServerTypeSelect replaces the old free-text target_type input
+        so the operator can't typo a Hetzner type code into the form.
+        `required` enforces a non-empty selection before submit.
+      -->
+      <ServerTypeSelect id="w-target" bind:value={newTarget} required />
     </div>
 
     <!--

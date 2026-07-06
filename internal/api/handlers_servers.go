@@ -1,12 +1,20 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sync"
 
 	"github.com/jonamat/hetzner-rescaler/internal/store"
 )
+
+// liveStateFanOutLimit caps the number of parallel Hetzner GetServer
+// calls in handleListServers. Eight keeps the worst-case request
+// latency well under one second even when the Hetzner API is slow,
+// without hammering their rate limiter on a large fleet.
+const liveStateFanOutLimit = 8
 
 func (d Deps) handleListServers(w http.ResponseWriter, r *http.Request) {
 	servers, err := d.Store.ListAllServers()
@@ -14,9 +22,11 @@ func (d Deps) handleListServers(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	live := liveStateMap(r.Context(), d, servers)
+
 	out := make([]ServerResponse, 0, len(servers))
 	for _, s := range servers {
-		out = append(out, serverToResponse(s))
+		out = append(out, serverToResponse(s, live[s.ID]))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -36,7 +46,8 @@ func (d Deps) handleGetServer(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, serverToResponse(srv))
+	live := d.liveServerState(r.Context(), srv)
+	writeJSON(w, http.StatusOK, serverToResponse(srv, live))
 }
 
 func (d Deps) handleCreateServer(w http.ResponseWriter, r *http.Request) {
@@ -73,7 +84,8 @@ func (d Deps) handleCreateServer(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusCreated, serverToResponse(srv))
+	live := d.liveServerState(r.Context(), srv)
+	writeJSON(w, http.StatusCreated, serverToResponse(srv, live))
 }
 
 func (d Deps) handleUpdateServer(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +124,8 @@ func (d Deps) handleUpdateServer(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, serverToResponse(existing))
+	live := d.liveServerState(r.Context(), existing)
+	writeJSON(w, http.StatusOK, serverToResponse(existing, live))
 }
 
 func (d Deps) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
@@ -136,10 +149,60 @@ func (d Deps) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// serverToResponse converts a *store.Server to its API projection.
-// Canonical definition lives here (Task 5); the previous duplicate in
-// handlers_projects.go was removed in favor of this one.
-func serverToResponse(s *store.Server) ServerResponse {
+// liveStateMap fetches live state for every server in parallel, capped
+// at liveStateFanOutLimit concurrent calls. Each call soft-fails on
+// its own (returning a zero LiveServerState), so the worst case is
+// "all servers come back without status/current_type" — never an
+// error response. Map keys are store.Server.ID.
+func liveStateMap(ctx context.Context, d Deps, servers []*store.Server) map[int64]LiveServerState {
+	out := make(map[int64]LiveServerState, len(servers))
+	if len(servers) == 0 || d.APIFor == nil {
+		return out
+	}
+
+	type result struct {
+		id   int64
+		live LiveServerState
+	}
+	results := make(chan result, len(servers))
+	sem := make(chan struct{}, liveStateFanOutLimit)
+
+	var wg sync.WaitGroup
+	for _, s := range servers {
+		if s == nil {
+			continue
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(srv *store.Server) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			// Re-check nil in the goroutine — defensive, matches the
+			// single-call path in liveServerState.
+			if srv == nil {
+				results <- result{}
+				return
+			}
+			live := d.liveServerState(ctx, srv)
+			results <- result{id: srv.ID, live: live}
+		}(s)
+	}
+	wg.Wait()
+	close(results)
+
+	for r := range results {
+		if r.id != 0 {
+			out[r.id] = r.live
+		}
+	}
+	return out
+}
+
+// serverToResponse converts a *store.Server to its API projection,
+// merging in the live Hetzner state when present. A zero LiveServerState
+// produces omitempty-absent fields, so callers that skip the live
+// fetch (or hit a Hetzner failure) still get a well-formed JSON body.
+func serverToResponse(s *store.Server, live LiveServerState) ServerResponse {
 	if s == nil {
 		return ServerResponse{}
 	}
@@ -155,5 +218,9 @@ func serverToResponse(s *store.Server) ServerResponse {
 		Mode:           s.Mode,
 		PromoteState:   s.PromoteState,
 		Timezone:       s.Timezone,
+		Status:         live.Status,
+		CurrentType:    live.CurrentType,
+		CreatedAt:      s.CreatedAt,
+		UpdatedAt:      s.UpdatedAt,
 	}
 }

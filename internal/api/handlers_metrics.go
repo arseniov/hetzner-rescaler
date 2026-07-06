@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"sort"
 	"time"
@@ -159,9 +160,10 @@ func metricsHandler(events EventReader, servers ServerLister, projects ProjectLi
 }
 
 // (d Deps) handleMetrics is the production-side thin wrapper that wires
-// the live *store.Store into metricsHandler.
+// the live *store.Store and live pricing into metricsHandler.
 func (d Deps) handleMetrics(w http.ResponseWriter, r *http.Request) {
-	metricsHandler(d.Store, d.Store, d.Store, fixedPricingMap()).ServeHTTP(w, r)
+	pricing := d.pricingMap(r.Context())
+	metricsHandler(d.Store, d.Store, d.Store, pricing).ServeHTTP(w, r)
 }
 
 // queryRangeLabel renders the requested range as the canonical short
@@ -414,6 +416,35 @@ func successRateByServer(events []*store.Event, servers []*store.Server) []Succe
 }
 
 // --- Pricing ---
+
+// pricingMap returns the €/month prices the cost chart should use.
+// It tries to read live prices from Hetzner via d.serverTypes (the
+// same code path the web's server-type picker uses, so the chart and
+// the picker can never disagree about a price). On any failure —
+// empty store, missing/invalid Hetzner token, network blip — it falls
+// back to fixedPricingMap() so the chart still renders.
+//
+// Fallback semantics: the returned map is always populated with
+// at minimum the "__default__" key so computeCostEUR's "unknown
+// type" branch keeps working. Types with a live price override the
+// hard-coded value; types missing from the live list (e.g. a type the
+// Hetzner API doesn't return any longer) keep their hard-coded price
+// if one is known, else fall through to "__default__" at compute
+// time.
+func (d Deps) pricingMap(ctx context.Context) map[string]float64 {
+	out := fixedPricingMap()
+	types, err := d.serverTypes(ctx)
+	if err != nil || len(types) == 0 {
+		return out
+	}
+	for _, t := range types {
+		if t.PriceMonthlyEUR <= 0 {
+			continue
+		}
+		out[t.Name] = float64(t.PriceMonthlyEUR)
+	}
+	return out
+}
 
 // fixedPricingMap returns the €/month prices for the Hetzner shared-
 // resource types the rescaler supports. The "__default__" key is the

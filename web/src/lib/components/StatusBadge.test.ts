@@ -17,4 +17,21 @@ describe('StatusBadge', () => {
     const { getByText } = render(StatusBadge, { status: 'unknown' });
     expect(getByText('UNKNOWN')).toBeTruthy();
   });
+
+  // Hetzner Cloud live states — populated from server.status when
+  // the API call succeeds. The badge renders the raw state word
+  // uppercased so the operator can grep logs verbatim.
+  for (const status of [
+    'running',
+    'initializing',
+    'starting',
+    'stopping',
+    'off',
+    'deleting'
+  ] as const) {
+    it(`renders ${status.toUpperCase()} for Hetzner live status`, () => {
+      const { getByText } = render(StatusBadge, { status });
+      expect(getByText(status.toUpperCase())).toBeTruthy();
+    });
+  }
 });

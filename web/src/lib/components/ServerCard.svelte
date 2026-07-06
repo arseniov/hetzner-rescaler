@@ -1,24 +1,29 @@
 <script lang="ts">
   import type { Server } from '$lib/types';
   import { eventsStream } from '$lib/stores/eventsStream.svelte';
+  import type { Status } from './StatusBadge.svelte';
   interface Props { server: Server }
   let { server }: Props = $props();
 
-  // Current size = the `to_type` of the most recent event for this
-  // server. Falls back to the configured base type when no event
-  // has been recorded yet (e.g. a brand-new manual server). This is
-  // the same heuristic used by /status/servers and is intentionally
-  // permissive — exact reconciliation against Hetzner's live state
-  // is a server-detail concern.
+  // Current size — preferred source is the live `current_type` field
+  // the API populates from Hetzner (`server.current_type`). When the
+  // API didn't return it (Hetzner was unreachable, the row hasn't been
+  // refreshed since the field was added), we fall back to the most
+  // recent event's `to_type` and finally to the configured base type.
+  // This is the same precedence used by /status/servers so a server
+  // looks the same everywhere on the dashboard.
   let currentType = $derived.by(() => {
+    if (server.current_type) return server.current_type;
     const latest = eventsStream.events.find((e) => e.server_id === server.id);
     return latest?.to_type ?? server.base_server_type;
   });
 
-  // Health: any failed event in the recent stream → degraded,
-  // otherwise ok (events seen and all succeeded), or unknown (no
-  // events yet — silent operator or new server).
-  let status = $derived.by<'ok' | 'degraded' | 'unknown'>(() => {
+  // Health — same precedence: live `server.status` first (Hetzner's
+  // authoritative view, e.g. `running` / `initializing` / `off`),
+  // then event-derived ok/degraded from the live SSE stream, then
+  // unknown when nothing has ever recorded a state.
+  let status = $derived.by<Status>(() => {
+    if (server.status) return server.status as Status;
     const recent = eventsStream.events.filter((e) => e.server_id === server.id);
     if (recent.length === 0) return 'unknown';
     if (recent.some((e) => !e.ok)) return 'degraded';
@@ -60,10 +65,21 @@
     scheduled: 'border-border bg-muted text-foreground'
   };
 
-  const statusClasses: Record<'ok' | 'degraded' | 'unknown', string> = {
+  // Dot-colour map for every Status value StatusBadge renders. The
+  // operator-facing vocabulary groups Hetzner live states into three
+  // buckets: healthy (green), transitional (amber), stopped/destructive
+  // (red/grey). When StatusBadge gains a new state this map must grow
+  // to match — a fallback would silently render a missing colour.
+  const statusClasses: Record<Status, string> = {
     ok: 'bg-success',
     degraded: 'bg-destructive',
-    unknown: 'bg-muted-foreground/40'
+    unknown: 'bg-muted-foreground/40',
+    running: 'bg-success',
+    initializing: 'bg-warning',
+    starting: 'bg-warning',
+    stopping: 'bg-warning',
+    off: 'bg-muted-foreground/40',
+    deleting: 'bg-destructive'
   };
 </script>
 

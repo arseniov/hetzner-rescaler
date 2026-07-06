@@ -20,6 +20,15 @@
   let newToken = $state('');
   let busy = $state(false);
 
+  // Auto-sync tally surfaced after a successful create. The server
+  // runs an initial Hetzner sync on POST /api/projects and returns
+  // how many servers it linked (`added`) and how many it skipped
+  // because they were already registered elsewhere (`skipped`). The
+  // operator previously never saw these numbers — they were dropped
+  // because the web typed the response as `Project`.
+  let createNotice = $state<{ added: number; skipped: number } | null>(null);
+  let syncWarning = $state<string | null>(null);
+
   // Pending-deletion state. We don't use the browser `confirm()` —
   // it blocks the thread, has no styling, and breaks with browsers
   // that throttle background tabs. Instead, the row's delete button
@@ -56,11 +65,16 @@
     e.preventDefault();
     busy = true;
     error = null;
+    createNotice = null;
+    syncWarning = null;
     try {
-      await api.createProject({ name: newName.trim(), hcloud_token: newToken.trim() });
+      const result = await api.createProject({ name: newName.trim(), hcloud_token: newToken.trim() });
       newName = '';
       newToken = '';
       addOpen = false;
+      // Show the auto-sync tally so the operator knows what got linked.
+      createNotice = { added: result.added.length, skipped: result.skipped.length };
+      if (result.last_error) syncWarning = result.last_error;
       await refresh();
     } catch (e) {
       error = e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e);
@@ -112,6 +126,27 @@
 
   {#if error}
     <Alert variant="destructive" class="mb-6">{error}</Alert>
+  {/if}
+
+  {#if createNotice}
+    <!--
+      Non-destructive info row — surfaces the auto-sync tally the
+      previous implementation silently dropped. Kept understated (no
+      accent / success colour) because the project exists either
+      way; the numbers are FYI, not a state change.
+    -->
+    <Alert class="mb-6">
+      {m.project_create_added({ count: createNotice.added })}
+      {#if createNotice.skipped > 0}
+        {m.project_create_skipped({ count: createNotice.skipped })}
+      {/if}
+    </Alert>
+  {/if}
+
+  {#if syncWarning}
+    <Alert variant="warning" class="mb-6">
+      {m.project_create_error({ error: syncWarning })}
+    </Alert>
   {/if}
 
   <section aria-label="Projects" class="rounded-md border border-border bg-card">

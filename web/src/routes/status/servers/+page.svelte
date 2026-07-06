@@ -32,17 +32,28 @@
   });
 
   function statusFor(s: Server): Status {
+    // Live API state wins — Hetzner's authoritative view. We fall
+    // back to the event stream (degraded if any failure, ok if any
+    // success) and finally to 'unknown' when nothing has recorded
+    // a state yet.
+    if (s.status) return s.status as Status;
     if (eventIndex.failed.has(s.id)) return 'degraded';
     if (eventIndex.latest.has(s.id)) return 'ok';
     return 'unknown';
   }
 
-  // "Current type" derivation: prefer the most recent event's
-  // to_type (the operator's most recent reality), fall back to the
-  // configured top type when the server has never rescaled (typical
-  // for `manual` servers that have only ever sat at one shape).
+  // "Current type" derivation: prefer the API's live `current_type`
+  // (Hetzner just told us), then the most recent event's to_type
+  // (the operator's most recent reality from the rescaler engine),
+  // finally the configured top type when the server has never
+  // rescaled (typical for `manual` servers that have only ever sat
+  // at one shape).
   function currentTypeFor(s: Server): string {
-    return eventIndex.latest.get(s.id)?.to_type ?? s.top_server_type;
+    return (
+      s.current_type ??
+      eventIndex.latest.get(s.id)?.to_type ??
+      s.top_server_type
+    );
   }
 
   function lastActivityFor(s: Server): string | undefined {

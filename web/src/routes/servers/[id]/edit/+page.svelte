@@ -9,6 +9,7 @@
   import Input from '$lib/components/ui/input.svelte';
   import Label from '$lib/components/ui/label.svelte';
   import Alert from '$lib/components/ui/alert.svelte';
+  import ServerTypeSelect from '$lib/components/ServerTypeSelect.svelte';
 
   let server = $state<Server | null>(null);
   let error = $state<string | null>(null);
@@ -106,14 +107,20 @@
       <Input id="f-label" bind:value={form.label} />
     </div>
 
+    <!--
+      Base / top type are now ServerTypeSelect dropdowns (driven by
+      /api/server-types) instead of free-text inputs. The fallback
+      chain stays CSV because the design vocabulary deliberately
+      prefers copy/paste from documentation over a chip combobox.
+    -->
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <div class="flex flex-col gap-1.5">
         <Label for="f-base">{m.server_edit_field_base()}</Label>
-        <Input id="f-base" bind:value={form.base_server_type} required />
+        <ServerTypeSelect id="f-base" bind:value={form.base_server_type} required />
       </div>
       <div class="flex flex-col gap-1.5">
         <Label for="f-top">{m.server_edit_field_top()}</Label>
-        <Input id="f-top" bind:value={form.top_server_type} required />
+        <ServerTypeSelect id="f-top" bind:value={form.top_server_type} required />
       </div>
     </div>
 

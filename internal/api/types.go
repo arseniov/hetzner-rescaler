@@ -15,20 +15,36 @@ type ProjectResponse struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// ServerResponse mirrors the store.Server struct with a pointer to
-// string for PromoteState so null/omitted are distinguishable.
+// ServerResponse is the API projection of a store.Server, plus live state
+// fetched from Hetzner for every list/get request.
+//
+// Field sources:
+//   - store-backed fields: id, project_id, hcloud_server_id, name, label,
+//     base_server_type, top_server_type, fallback_chain, mode,
+//     promote_state, timezone, created_at, updated_at
+//   - live Hetzner state: status (running/initializing/starting/stopping/
+//     off/deleting), current_type (the live ServerType.Name as reported
+//     by Hetzner right now)
+//
+// Live fields are omitempty: a Hetzner API failure leaves them absent
+// from the response so the web can fall back to its own derived state
+// instead of crashing the whole endpoint.
 type ServerResponse struct {
-	ID             int64    `json:"id"`
-	ProjectID      int64    `json:"project_id"`
-	HCloudServerID int      `json:"hcloud_server_id"`
-	Name           string   `json:"name"`
-	Label          string   `json:"label"`
-	BaseServerType string   `json:"base_server_type"`
-	TopServerType  string   `json:"top_server_type"`
-	FallbackChain  []string `json:"fallback_chain"`
-	Mode           string   `json:"mode"`
-	PromoteState   *string  `json:"promote_state,omitempty"`
-	Timezone       string   `json:"timezone"`
+	ID             int64     `json:"id"`
+	ProjectID      int64     `json:"project_id"`
+	HCloudServerID int       `json:"hcloud_server_id"`
+	Name           string    `json:"name"`
+	Label          string    `json:"label"`
+	BaseServerType string    `json:"base_server_type"`
+	TopServerType  string    `json:"top_server_type"`
+	FallbackChain  []string  `json:"fallback_chain"`
+	Mode           string    `json:"mode"`
+	PromoteState   *string   `json:"promote_state,omitempty"`
+	Timezone       string    `json:"timezone"`
+	Status         string    `json:"status,omitempty"`
+	CurrentType    string    `json:"current_type,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // WindowResponse mirrors store.Window.
@@ -58,7 +74,10 @@ type EventResponse struct {
 }
 
 // ServerTypeResponse is the projection of a Hetzner server type for the
-// UI's server-type picker. Available is the live availability flag.
+// UI's server-type picker. All seven fields are populated on every
+// non-nil source row: description, cores, memory/disk in GB, the live
+// Available flag (derived from Pricings length), and the first
+// pricing entry's monthly EUR gross parsed to float32.
 type ServerTypeResponse struct {
 	Name            string  `json:"name"`
 	Description     string  `json:"description,omitempty"`
@@ -84,14 +103,21 @@ type RefreshProjectResponse struct {
 	Skipped []ServerResponse `json:"skipped"`
 }
 
-// createProjectResponse is what POST /api/projects returns. It embeds
+// CreateProjectResponse is what POST /api/projects returns. It embeds
 // ProjectResponse plus the auto-populated server tallies (from the
-// initial sync) and any LastError from the fetch step (so the UI can
-// surface a bad token without losing the created project row).
-type createProjectResponse struct {
+// initial sync) and a LastError from the fetch step so the UI can
+// surface a bad token without losing the created project row.
+//
+// Exported because the web client types its createProject return as
+// CreateProjectResult (which mirrors this shape). Kept in sync with
+// the ProjectResponse embedded type so web/src/lib/types.ts sees
+// `added`, `skipped`, `last_error`, plus every Project field flat on
+// the response.
+type CreateProjectResponse struct {
 	ProjectResponse
-	Added   []ServerResponse `json:"added"`
-	Skipped []ServerResponse `json:"skipped"`
+	Added     []ServerResponse `json:"added"`
+	Skipped   []ServerResponse `json:"skipped"`
+	LastError string           `json:"last_error,omitempty"`
 }
 
 // CreateServerRequest is the body for POST /api/servers.

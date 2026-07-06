@@ -86,7 +86,7 @@ func (d Deps) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	// helpful error state. The user can retry via POST /refresh.
 	added, skipped, fetchErr := d.syncProjectServers(r.Context(), p.ID)
 
-	resp := createProjectResponse{
+	resp := CreateProjectResponse{
 		ProjectResponse: projectToResponse(p),
 		Added:           added,
 		Skipped:         skipped,
@@ -183,7 +183,7 @@ func (d Deps) syncProjectServers(ctx context.Context, projectID int64) ([]Server
 			continue
 		}
 		if existing, ok := existingByID[hs.ID]; ok {
-			skipped = append(skipped, serverToResponse(existing))
+			skipped = append(skipped, serverToResponse(existing, LiveServerState{}))
 			continue
 		}
 		baseName := ""
@@ -203,7 +203,7 @@ func (d Deps) syncProjectServers(ctx context.Context, projectID int64) ([]Server
 		if err != nil {
 			return added, skipped, fmt.Errorf("create server: %w", err)
 		}
-		added = append(added, serverToResponse(srv))
+		added = append(added, serverToResponse(srv, LiveServerState{}))
 	}
 
 	return added, skipped, nil

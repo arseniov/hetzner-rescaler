@@ -45,6 +45,12 @@
   "project_detail_name_label": "Display name",
   "project_detail_add_submit": "Add server",
   "project_detail_add_hint": "Default base/top types are filled in. Edit them on the server detail page.",
+  "project_detail_field_base": "Base server type",
+  "project_detail_field_top": "Top server type",
+  "project_detail_field_fallback": "Fallback chain (CSV)",
+  "project_create_added": "Imported {count} servers from Hetzner.",
+  "project_create_skipped": "Skipped {count} already-registered.",
+  "project_create_error": "Initial sync error: {error}",
   "project_detail_servers_title": "Servers ({count})",
   "project_detail_servers_empty": "No servers registered.",
   "servers_title": "Servers",
@@ -168,5 +174,7 @@
   "servers_status_col_last_activity": "Last activity",
   "servers_status_no_activity": "No activity",
   "servers_status_col_window": "Active window",
-  "servers_status_col_status": "Status"
+  "servers_status_col_status": "Status",
+  "server_type_select_loading": "Loading server types…",
+  "server_type_select_unavailable": "Server types unavailable — check the Hetzner token"
 }

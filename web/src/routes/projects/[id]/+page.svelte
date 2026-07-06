@@ -10,6 +10,7 @@
   import Label from '$lib/components/ui/label.svelte';
   import Alert from '$lib/components/ui/alert.svelte';
   import ServerCard from '$lib/components/ServerCard.svelte';
+  import ServerTypeSelect from '$lib/components/ServerTypeSelect.svelte';
 
   let project = $state<Project | null>(null);
   let servers = $state<Server[]>([]);
@@ -18,9 +19,14 @@
 
   // Inline register-server form state. We keep this on the page
   // rather than behind a dialog because it's a short, primary
-  // action for the project view.
+  // action for the project view. The base/top/fallback fields are
+  // ServerTypeSelect dropdowns so the operator can't typo a Hetzner
+  // type code (previous default was hardcoded 'cpx11'/'cpx31').
   let newHcloudId = $state<string>('');
   let newName = $state('');
+  let newBase = $state('');
+  let newTop = $state('');
+  let newFallbackCsv = $state('');
   let registering = $state(false);
 
   let projectId = $derived(Number($page.params.id));
@@ -49,22 +55,30 @@
     error = null;
     registering = true;
     try {
+      const chain = newFallbackCsv
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
       await api.createServer({
         project_id: projectId,
         hcloud_server_id: Number(newHcloudId),
         name: newName,
         label: newName,
-        // Manual registration: defaults match the project's
-        // fallback chain (cpx11 ↔ cpx31) — operators can adjust
-        // from the server's edit page after registering.
-        base_server_type: 'cpx11',
-        top_server_type: 'cpx31',
-        fallback_chain: ['cpx31', 'cpx11'],
+        // Operator-driven base/top/fallback — no magic defaults. We
+        // require the operator to pick because silently registering
+        // a server with an empty type would create a row the API
+        // can never rescale.
+        base_server_type: newBase,
+        top_server_type: newTop,
+        fallback_chain: chain,
         mode: 'manual',
         timezone: 'UTC'
       });
       newName = '';
       newHcloudId = '';
+      newBase = '';
+      newTop = '';
+      newFallbackCsv = '';
       await refresh();
     } catch (err) {
       error = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err);
@@ -127,7 +141,14 @@
     <!-- Register-server form. Inline; same hairline panel vocabulary
          as the rest of the page. The hcloud_server_id input is
          number-coerced (string ↔ number) so the field can be empty
-         during typing without "NaN" appearing in the value. -->
+         during typing without "NaN" appearing in the value.
+
+         The base/top/fallback chain fields are operator-driven
+         dropdowns (was: hardcoded 'cpx11'/'cpx31' defaults that the
+         operator had to fix on the server's edit page later). We
+         intentionally leave them empty rather than auto-pick — silent
+         defaults hide mistakes, and the dropdown makes the choice
+         cheap. -->
     <section
       aria-label="Register a server manually"
       class="mb-6 rounded-md border border-border bg-card p-4"
@@ -135,24 +156,45 @@
       <h2 class="mb-3 font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
         {m.project_detail_register_title()}
       </h2>
-      <form onsubmit={registerServer} class="grid grid-cols-1 gap-3 sm:grid-cols-[10rem_1fr_auto] sm:items-end">
-        <div class="flex flex-col gap-1.5">
-          <Label for="hcloud-id">{m.project_detail_hcloud_id_label()}</Label>
-          <Input
-            id="hcloud-id"
-            type="number"
-            bind:value={newHcloudId}
-            required
-            placeholder="12345678"
-          />
+      <form onsubmit={registerServer} class="space-y-3">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-[10rem_1fr_auto] sm:items-end">
+          <div class="flex flex-col gap-1.5">
+            <Label for="hcloud-id">{m.project_detail_hcloud_id_label()}</Label>
+            <Input
+              id="hcloud-id"
+              type="number"
+              bind:value={newHcloudId}
+              required
+              placeholder="12345678"
+            />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <Label for="hcloud-name">{m.project_detail_name_label()}</Label>
+            <Input id="hcloud-name" bind:value={newName} required placeholder="web-1" />
+          </div>
+          <Button variant="primary" type="submit" disabled={registering}>
+            {registering ? '…' : m.project_detail_add_submit()}
+          </Button>
         </div>
-        <div class="flex flex-col gap-1.5">
-          <Label for="hcloud-name">{m.project_detail_name_label()}</Label>
-          <Input id="hcloud-name" bind:value={newName} required placeholder="web-1" />
+
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div class="flex flex-col gap-1.5">
+            <Label for="reg-base">{m.project_detail_field_base()}</Label>
+            <ServerTypeSelect id="reg-base" bind:value={newBase} required />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <Label for="reg-top">{m.project_detail_field_top()}</Label>
+            <ServerTypeSelect id="reg-top" bind:value={newTop} required />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <Label for="reg-fallback">{m.project_detail_field_fallback()}</Label>
+            <Input
+              id="reg-fallback"
+              bind:value={newFallbackCsv}
+              placeholder="cpx31,cpx21"
+            />
+          </div>
         </div>
-        <Button variant="primary" type="submit" disabled={registering}>
-          {registering ? '…' : m.project_detail_add_submit()}
-        </Button>
       </form>
       <p class="mt-2 text-xs text-muted-foreground">{m.project_detail_add_hint()}</p>
     </section>
