@@ -10,17 +10,58 @@
   let chart: any = null;
   let isDark = $state(false);
 
+  // ApexCharts accepts color strings but not CSS variables directly.
+  // We read the relevant tokens off :root via getComputedStyle and pass
+  // the resolved value so the chart honours dark / light switching.
+  function token(name: string, fallback: string): string {
+    if (typeof document === 'undefined') return fallback;
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  }
+
   function options(rows: RescaleCountsByDayRow[]) {
     return {
-      chart: { type: 'area', height: 240, toolbar: { show: false }, background: 'transparent' },
+      chart: {
+        type: 'area',
+        height: 240,
+        toolbar: { show: false },
+        background: 'transparent',
+        foreColor: token('--color-chart-axis', '#94a3b8'),
+        fontFamily: 'JetBrains Mono, ui-monospace, monospace'
+      },
+      colors: [
+        token('--color-chart-series-1', '#94a3b8'),
+        token('--color-chart-series-2', '#f5a86b')
+      ],
       series: [
         { name: 'OK', data: rows.map((r) => ({ x: r.date, y: r.ok })) },
         { name: 'Failed', data: rows.map((r) => ({ x: r.date, y: r.failed })) }
       ],
-      xaxis: { type: 'category' },
-      stroke: { curve: 'smooth' },
+      xaxis: {
+        type: 'category',
+        labels: { style: { colors: token('--color-chart-axis', '#94a3b8') } },
+        axisBorder: { color: token('--color-chart-grid', '#475569') },
+        axisTicks: { color: token('--color-chart-grid', '#475569') }
+      },
+      yaxis: {
+        labels: { style: { colors: token('--color-chart-axis', '#94a3b8') } }
+      },
+      grid: { borderColor: token('--color-chart-grid', '#475569'), strokeDashArray: 3 },
+      stroke: { curve: 'smooth', width: 1.5 },
       dataLabels: { enabled: false },
-      theme: { mode: isDark ? 'dark' : 'light' }
+      legend: {
+        labels: { colors: token('--color-chart-axis', '#94a3b8') }
+      },
+      fill: {
+        type: 'gradient',
+        gradient: {
+          shadeIntensity: 0.4,
+          opacityFrom: 0.18,
+          opacityTo: 0,
+          stops: [0, 90, 100]
+        }
+      },
+      tooltip: { theme: isDark ? 'dark' : 'light' }
     };
   }
 

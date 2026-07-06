@@ -1,14 +1,15 @@
 <script lang="ts">
-  import { Badge } from 'flowbite-svelte';
-
   export type Status = 'ok' | 'degraded' | 'unknown';
   interface Props { status: Status }
   let { status }: Props = $props();
 
-  const color: Record<Status, 'green' | 'yellow' | 'gray'> = {
-    ok: 'green',
-    degraded: 'yellow',
-    unknown: 'gray'
+  // Compact status indicator — a single dot in the relevant token
+  // colour, followed by an ALL-CAPS label. No flowbite Badge, no
+  // filled background: this is a row in a data table, not a callout.
+  const tone: Record<Status, string> = {
+    ok: 'bg-success',
+    degraded: 'bg-warning',
+    unknown: 'bg-muted-foreground'
   };
   const text: Record<Status, string> = {
     ok: 'OK',
@@ -17,4 +18,7 @@
   };
 </script>
 
-<Badge color={color[status]}>{text[status]}</Badge>
+<span class="inline-flex items-center gap-2 font-mono text-xs font-medium uppercase tracking-wider text-foreground">
+  <span class="inline-block size-1.5 rounded-full {tone[status]}"></span>
+  {text[status]}
+</span>

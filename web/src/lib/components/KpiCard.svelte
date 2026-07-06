@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { Card } from 'flowbite-svelte';
-
   interface Props {
     label: string;
     value: string | number | null | undefined;
@@ -15,16 +13,21 @@
   let display = $derived(loading ? '…' : value ?? '—');
 </script>
 
-<Card class="flex-1 border-0">
-  <p class="text-sm text-gray-600 dark:text-gray-400">{label}</p>
-  <p class="mt-1 text-3xl font-semibold text-gray-900 dark:text-white">
-    {#if loading}
-      <span class="inline-block animate-pulse text-gray-400">…</span>
-    {:else}
-      {display}
-    {/if}
-  </p>
-  {#if hint}
-    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{hint}</p>
+<!-- KPI panel — flat card, hairline border, no shadow. The numeric
+     figure uses JetBrains Mono with tabular numerals so digits stay
+     column-aligned across cards and don't jitter as values change. -->
+<div
+  class="flex flex-col gap-1 rounded-md border border-border bg-card px-4 py-3 text-card-foreground"
+>
+  <p class="text-sm text-muted-foreground">{label}</p>
+  {#if loading}
+    <p class="tabular animate-pulse text-3xl text-muted-foreground">…</p>
+  {:else if value === null || value === undefined}
+    <p class="tabular text-3xl text-muted-foreground">—</p>
+  {:else}
+    <p class="tabular text-3xl font-semibold text-foreground">{display}</p>
   {/if}
-</Card>
+  {#if hint}
+    <p class="text-xs text-muted-foreground">{hint}</p>
+  {/if}
+</div>

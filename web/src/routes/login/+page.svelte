@@ -1,8 +1,11 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { Button, Card, Input, Label, Alert } from 'flowbite-svelte';
   import { m } from '$lib/paraglide/messages.js';
   import { signIn, signUp } from '$lib/stores/auth.svelte';
+  import Button from '$lib/components/ui/button.svelte';
+  import Input from '$lib/components/ui/input.svelte';
+  import Label from '$lib/components/ui/label.svelte';
+  import Alert from '$lib/components/ui/alert.svelte';
 
   // signupEnabled is set by +layout.server.ts from the operator-
   // controlled DISABLE_SIGNUP env var. When false, sign-up mode is
@@ -19,13 +22,11 @@
 
   // Derived: the UI should never allow visiting signup mode when
   // signups are disabled, even if some code path tried to flip `mode`.
-  // The form is also unconditionally hidden in that state below.
   let signupBlocked = $derived(!data.signupEnabled);
 
-  // The server-side hook (web/src/hooks.server.ts) sends logged-in
-  // visitors away from /login with a 303 → /. So this component only
-  // ever renders for unauthenticated users — no client-side session
-  // check is needed at mount time.
+  // The server-side hook sends logged-in visitors away from /login
+  // with a 303 → /. So this component only ever renders for
+  // unauthenticated users — no client-side session check at mount time.
   async function submit() {
     error = null;
     if (!email || !password) {
@@ -35,7 +36,7 @@
     busy = true;
     try {
       if (mode === 'signin') await signIn(email, password);
-      else await signUp(email, password, email.split('@')[0]);
+      else await signUp(email, password, email.split('@')[0] ?? 'user');
       await goto('/');
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -45,46 +46,83 @@
   }
 </script>
 
-<div class="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
-  <Card class="w-full max-w-md border-0">
-    <h2 class="text-2xl font-semibold mb-4 text-gray-900 dark:text-white">
-      {mode === 'signin' ? m.login_title() : m.login_signup_title()}
-    </h2>
+<svelte:head>
+  <title>Sign in · Hetzner Rescaler</title>
+</svelte:head>
 
-    {#if error}
-      <Alert color="red" class="mb-3">{error}</Alert>
-    {/if}
+<!--
+  Login. Single panel, single job, centred on the canvas. No marketing
+  copy above the form — the operator knows what they're signing in to.
+-->
+<main class="flex min-h-screen items-center justify-center bg-background px-4 py-10">
+  <div class="w-full max-w-sm">
+    <!-- Brand mark + product name. Display face carries the title. -->
+    <header class="mb-8 text-center">
+      <h1 class="font-display text-2xl font-semibold tracking-tight text-foreground">
+        {m.app_title()}
+      </h1>
+      <p class="mt-1 font-mono text-xs uppercase tracking-wider text-muted-foreground">
+        {mode === 'signin' ? m.login_title() : m.login_signup_title()}
+      </p>
+    </header>
 
-    {#if signupBlocked && mode === 'signup'}
-      <Alert color="yellow" class="mb-3">
-        <span class="font-medium">{m.login_signup_disabled_title()}</span>
-        <span class="block mt-1 text-sm">{m.login_signup_disabled_message()}</span>
-      </Alert>
-    {:else}
-      <form onsubmit={(e) => { e.preventDefault(); submit(); }} class="space-y-3">
-        <Label>
-          {m.login_email_label()}
-          <Input type="email" bind:value={email} required autocomplete="email" />
-        </Label>
-        <Label>
-          {m.login_password_label()}
-          <Input type="password" bind:value={password} required autocomplete="current-password" />
-        </Label>
+    <div class="rounded-md border border-border bg-card p-6">
+      {#if error}
+        <Alert variant="destructive" class="mb-4">{error}</Alert>
+      {/if}
 
-        <Button type="submit" disabled={busy || signupBlocked} class="w-full">
-          {mode === 'signin' ? m.login_submit() : m.login_signup_submit()}
-        </Button>
-      </form>
-    {/if}
+      {#if signupBlocked && mode === 'signup'}
+        <Alert variant="warning">
+          <span class="font-medium text-foreground">{m.login_signup_disabled_title()}</span>
+          <span class="mt-1 block text-sm text-muted-foreground">
+            {m.login_signup_disabled_message()}
+          </span>
+        </Alert>
+      {:else}
+        <form onsubmit={(e) => { e.preventDefault(); submit(); }} class="space-y-4">
+          <div class="flex flex-col gap-1.5">
+            <Label for="email">{m.login_email_label()}</Label>
+            <Input
+              id="email"
+              type="email"
+              bind:value={email}
+              required
+              autocomplete="email"
+              placeholder="ops@example.com"
+            />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <Label for="password">{m.login_password_label()}</Label>
+            <Input
+              id="password"
+              type="password"
+              bind:value={password}
+              required
+              autocomplete="current-password"
+            />
+          </div>
 
-    {#if !signupBlocked}
-      <button
-        type="button"
-        class="mt-4 text-sm text-blue-600 dark:text-blue-400 hover:underline"
-        onclick={() => { mode = mode === 'signin' ? 'signup' : 'signin'; error = null; }}
-      >
-        {mode === 'signin' ? m.login_switch_to_signup() : m.login_switch_to_signin()}
-      </button>
-    {/if}
-  </Card>
-</div>
+          <Button type="submit" variant="primary" size="lg" disabled={busy || signupBlocked} class="w-full">
+            {#if busy}
+              <span class="opacity-70">{m.login_submit()}…</span>
+            {:else}
+              {mode === 'signin' ? m.login_submit() : m.login_signup_submit()}
+            {/if}
+          </Button>
+        </form>
+      {/if}
+
+      {#if !signupBlocked}
+        <div class="mt-6 border-t border-border pt-4 text-center">
+          <button
+            type="button"
+            class="font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+            onclick={() => { mode = mode === 'signin' ? 'signup' : 'signin'; error = null; }}
+          >
+            {mode === 'signin' ? m.login_switch_to_signup() : m.login_switch_to_signin()}
+          </button>
+        </div>
+      {/if}
+    </div>
+  </div>
+</main>

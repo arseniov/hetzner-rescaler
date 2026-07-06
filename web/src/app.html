@@ -6,12 +6,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Hetzner Rescaler</title>
     <script>
+      // Impeccable: dashboard is dark-first. First-time visitors get
+      // dark surfaces unless they (or their OS) explicitly prefer light.
+      // Stored choice always wins. Subsequent runs honour whatever the
+      // toggle theme.svelte.ts store last wrote.
       (function () {
         try {
           var stored = localStorage.getItem('hetzner-rescaler-theme');
           var theme = stored === 'light' || stored === 'dark'
             ? stored
-            : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            : (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
           if (theme === 'dark') document.documentElement.classList.add('dark');
           document.documentElement.dataset.theme = theme;
         } catch (_) {}
