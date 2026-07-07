@@ -227,3 +227,71 @@ func TestSubmit_RejectsWhenAlreadyInProgress(t *testing.T) {
 		t.Fatalf("err = %v, want ErrAlreadyInProgress", err)
 	}
 }
+
+func TestRunRescale_HappyPathWritesTerminalWithReconciledToType(t *testing.T) {
+	s, _ := store.OpenTemp()
+	defer s.Close()
+	_, srvID := seedRescaleTestProjectAndServer(t, s)
+	srv, _ := s.GetServer(srvID)
+
+	mock := hcloudmock.New()
+	mock.AddServer(&hetzner.Server{
+		ID: srv.HCloudServerID, Name: srv.Name,
+		ServerType: &hetzner.ServerType{Name: "cpx11"},
+	})
+
+	m := NewManager(s)
+	_ = m.Start(context.Background())
+	m.setAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
+		return mock, nil
+	})
+
+	done := make(chan struct{})
+	go func() {
+		_, _ = m.Submit(context.Background(), srv, "cpx31", "api")
+		close(done)
+	}()
+	<-done
+
+	// Wait for the goroutine to finish (poll the jobs map).
+	// Mock actions take ~5s each (pollInterval) — so the rescale takes
+	// at least ~10s end-to-end (change-type + power-on). Poll for
+	// 60s to leave headroom for slow CI.
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		m.mu.Lock()
+		_, busy := m.jobs[srvID]
+		m.mu.Unlock()
+		if !busy {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	events, _ := s.ListEventsByServer(srvID, 20)
+	var pending *store.Event
+	var terminal *store.Event
+	for _, e := range events {
+		if e.Kind == "rescale_pending" {
+			pending = e
+		}
+		if e.Kind == "rescale_completed" || e.Kind == "rescale_failed" {
+			terminal = e
+		}
+	}
+	if pending == nil {
+		t.Fatal("pending row missing")
+	}
+	if pending.FinishedAt.IsZero() {
+		t.Fatalf("pending row should be finished: %+v", pending)
+	}
+	if terminal == nil {
+		t.Fatalf("terminal row missing; events=%+v", events)
+	}
+	if terminal.ToType != "cpx31" {
+		t.Fatalf("terminal ToType = %q, want cpx31 (reconciled)", terminal.ToType)
+	}
+	if !terminal.OK {
+		t.Fatalf("terminal row ok = false, want true: %+v", terminal)
+	}
+}

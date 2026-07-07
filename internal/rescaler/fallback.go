@@ -19,8 +19,14 @@ var ErrAllUnavailable = errors.New("rescaler: all fallback targets unavailable")
 // from the first failing attempt (subsequent chain entries are NOT tried
 // for non-unavailable errors).
 func RescaleWithFallback(ctx context.Context, api hetzner.API, srv *hetzner.Server, targetType string, chain []string) (string, error) {
+	return RescaleWithFallbackWithHook(ctx, api, srv, targetType, chain, nil)
+}
+
+// RescaleWithFallbackWithHook is RescaleWithFallback with a phase hook
+// passed down to every Rescale invocation. Same return contract.
+func RescaleWithFallbackWithHook(ctx context.Context, api hetzner.API, srv *hetzner.Server, targetType string, chain []string, phaseHook func(string)) (string, error) {
 	for _, t := range chain {
-		err := Rescale(ctx, api, srv, t)
+		err := RescaleWithHook(ctx, api, srv, t, phaseHook)
 		if err == nil {
 			return t, nil
 		}

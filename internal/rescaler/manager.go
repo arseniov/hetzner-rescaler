@@ -3,6 +3,7 @@ package rescaler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -15,6 +16,16 @@ import (
 var ErrAlreadyInProgress = errors.New("rescaler: rescale already in progress")
 
 // Manager owns the lifecycle of async rescale goroutines.
+//
+// The jobs map is the source of truth for in-flight goroutines: while a
+// server ID is in m.jobs, a goroutine is running for that server. Submit
+// uses the map to enforce "one rescale per server" semantics; runRescale
+// removes the entry in a defer so the slot frees as soon as the work
+// completes (success, failure, or panic).
+//
+// The store is the secondary source of truth: a still-pending
+// rescale_pending row means a previous process was killed mid-rescale,
+// and Start walks those rows on boot to mark them as failed recovery.
 type Manager struct {
 	store       *store.Store
 	mu          sync.Mutex
@@ -80,11 +91,13 @@ func (m *Manager) Start(ctx context.Context) error {
 	return nil
 }
 
-// Submit reserves the server for an async rescale. Returns the new
-// pending event ID, or ErrAlreadyInProgress if the server already has a
-// goroutine in flight. The actual rescale work is not started here —
-// Task 10 introduces the goroutine + runRescale. This task only proves
-// the row insertion + concurrency check.
+// Submit reserves the server for an async rescale, inserts the pending
+// event row, and spawns a goroutine that walks the rescale phases. The
+// HTTP request returns immediately with the pending event ID.
+//
+// Errors:
+//   - ErrAlreadyInProgress: another goroutine is already working on srv.
+//   - any API/store error during the synchronous setup phase.
 func (m *Manager) Submit(ctx context.Context, srv *store.Server, target string, triggeredBy string) (int64, error) {
 	m.mu.Lock()
 	if _, busy := m.jobs[srv.ID]; busy {
@@ -117,13 +130,91 @@ func (m *Manager) Submit(ctx context.Context, srv *store.Server, target string, 
 		return 0, err
 	}
 
-	// Register the job in the map. Use a no-op cancel for now; Task 10
-	// replaces it with the goroutine's real cancel function.
+	// Spawn the goroutine. The goroutine owns the rest of the lifecycle.
+	jobCtx, cancel := context.WithCancel(context.Background())
 	m.mu.Lock()
-	m.jobs[srv.ID] = func() {}
+	m.jobs[srv.ID] = cancel
 	m.mu.Unlock()
-
+	go m.runRescale(jobCtx, srv, hserver, fromType, api, target, id, triggeredBy)
 	return id, nil
+}
+
+// runRescale walks the rescale phases: emits per-phase updates via
+// UpdateEventPhase, calls RescaleWithFallbackWithHook for the actual
+// Hetzner work, then reconciles the terminal to_type from Hetzner and
+// writes the terminal event row. On any error, writes a rescale_failed
+// row.
+//
+// Defer: removes the jobs map entry, recovers from panic, writes the
+// terminal row even on panic.
+//
+// `hserver` and `fromType` are passed in from Submit (which already
+// fetched them) so the goroutine does not duplicate the Hetzner call.
+func (m *Manager) runRescale(ctx context.Context, srv *store.Server, hserver *hetzner.Server, fromType string, api hetzner.API, target string, pendingID int64, triggeredBy string) {
+	defer func() {
+		m.mu.Lock()
+		delete(m.jobs, srv.ID)
+		m.mu.Unlock()
+		if r := recover(); r != nil {
+			now := time.Now().UTC()
+			_, _ = m.store.AppendEvent(store.Event{
+				ServerID:    srv.ID,
+				Kind:        "rescale_failed",
+				StartedAt:   now,
+				FinishedAt:  now,
+				OK:          false,
+				Error:       fmt.Sprintf("panic: %v", r),
+				TriggeredBy: triggeredBy,
+			})
+			_ = m.store.UpdateEventFinished(pendingID, false, fmt.Sprintf("panic: %v", r))
+		}
+	}()
+
+	phaseHook := func(phase string) {
+		_ = m.store.UpdateEventPhase(pendingID, phase)
+	}
+
+	_, err := RescaleWithFallbackWithHook(ctx, api, hserver, target, srv.FallbackChain, phaseHook)
+
+	// Reconcile terminal to_type from Hetzner (authoritative). The
+	// in-memory hserver may have a stale type if RescaleWithFallback's
+	// final Rescale call updated the struct; we trust the Hetzner
+	// response over that.
+	var toType string
+	if h, gerr := api.GetServer(ctx, srv.HCloudServerID); gerr == nil && h != nil && h.ServerType != nil {
+		toType = h.ServerType.Name
+	} else {
+		// Reconciliation failed — fall back to the requested target on
+		// failure, or whatever type RescaleWithFallback used on success.
+		// Either way: still better than blank.
+		toType = target
+	}
+
+	now := time.Now().UTC()
+	termKind := "rescale_completed"
+	ok := true
+	errMsg := ""
+	if err != nil {
+		termKind = "rescale_failed"
+		ok = false
+		errMsg = err.Error()
+	}
+	if _, aerr := m.store.AppendEvent(store.Event{
+		ServerID:    srv.ID,
+		Kind:        termKind,
+		FromType:    fromType,
+		ToType:      toType,
+		StartedAt:   now,
+		FinishedAt:  now,
+		OK:          ok,
+		Error:       errMsg,
+		TriggeredBy: triggeredBy,
+	}); aerr != nil {
+		// If we can't write the terminal row, the defer still removed the
+		// jobs map entry; nothing else to do.
+		_ = aerr
+	}
+	_ = m.store.UpdateEventFinished(pendingID, ok, errMsg)
 }
 
 // resolveAPI returns a hetzner.API for the given project. Wired in
