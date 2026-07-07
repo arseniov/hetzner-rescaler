@@ -114,6 +114,32 @@ func boolToInt(b bool) int {
 	return 0
 }
 
+// ActivePendingEventForServer returns the most recent still-pending
+// rescale_pending event for the server, or nil if none is in flight.
+// "Pending" means kind = 'rescale_pending' AND finished_at IS NULL.
+// Used by both Manager.Submit (to surface the ID on 409) and by the
+// /api/servers handler (to embed pending_event in ServerResponse).
+func (s *Store) ActivePendingEventForServer(serverID int64) (*Event, error) {
+	rows, err := s.db.Query(
+		`SELECT `+eventColumns+` FROM events
+		 WHERE server_id = ? AND kind = 'rescale_pending' AND finished_at IS NULL
+		 ORDER BY id DESC LIMIT 1`,
+		serverID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: active pending event: %w", err)
+	}
+	defer rows.Close()
+	out, err := scanEvents(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out[0], nil
+}
+
 func (s *Store) getEvent(id int64) (*Event, error) {
 	rows, err := s.db.Query(
 		`SELECT `+eventColumns+` FROM events WHERE id = ?`,

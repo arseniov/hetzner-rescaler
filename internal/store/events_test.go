@@ -186,6 +186,48 @@ func TestListAllEventsFilterByServerID(t *testing.T) {
 	}
 }
 
+func TestActivePendingEventForServer_ReturnsLatestPending(t *testing.T) {
+	s, _ := OpenTemp()
+	defer s.Close()
+	_, srvID := seedProjectAndServer(t, s)
+
+	// Older pending event — finished (should be ignored).
+	old := seedEvent(t, s, srvID, "rescale_pending")
+	_ = s.UpdateEventFinished(old, true, "")
+
+	// Latest pending event — still in flight.
+	latest := seedEvent(t, s, srvID, "rescale_pending")
+	_ = s.UpdateEventPhase(latest, "shutting_down")
+
+	got, err := s.ActivePendingEventForServer(srvID)
+	if err != nil {
+		t.Fatalf("ActivePendingEventForServer: %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected pending event, got nil")
+	}
+	if got.ID != latest {
+		t.Fatalf("got id %d, want %d", got.ID, latest)
+	}
+	if got.Phase != "shutting_down" {
+		t.Fatalf("Phase = %q, want shutting_down", got.Phase)
+	}
+}
+
+func TestActivePendingEventForServer_NilWhenNone(t *testing.T) {
+	s, _ := OpenTemp()
+	defer s.Close()
+	_, srvID := seedProjectAndServer(t, s)
+
+	got, err := s.ActivePendingEventForServer(srvID)
+	if err != nil {
+		t.Fatalf("ActivePendingEventForServer: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("want nil, got %+v", got)
+	}
+}
+
 func TestEventListPendingFinishedAtZero(t *testing.T) {
 	s := newTestStore(t)
 	p, _ := s.CreateProject("p", []byte("t"), []byte("n"))
