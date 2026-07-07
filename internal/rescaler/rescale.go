@@ -16,8 +16,8 @@ import (
 // pollInterval and provisionerSleep match the original implementation's
 // behavior. Tune in one place.
 const (
-	pollInterval      = 5 * time.Second
-	provisionerSleep  = 30 * time.Second
+	pollInterval     = 5 * time.Second
+	provisionerSleep = 30 * time.Second
 )
 
 // Rescale changes the given server to targetType. The flow:
@@ -28,7 +28,21 @@ const (
 //  5. poweron
 //
 // Returns hetzner.ErrUnavailable (wrapped) if the target is out of stock.
+// The phaseHook is called with the next phase label at each phase boundary
+// (shutting_down, changing_type, powering_on, done). Pass nil for no-op
+// behavior — preserves the original 3-arg call signature for tests.
 func Rescale(ctx context.Context, api hetzner.API, srv *hetzner.Server, targetType string) error {
+	return RescaleWithHook(ctx, api, srv, targetType, nil)
+}
+
+// RescaleWithHook is Rescale plus an optional phase callback. See Rescale.
+func RescaleWithHook(ctx context.Context, api hetzner.API, srv *hetzner.Server, targetType string, phaseHook func(string)) error {
+	emit := func(phase string) {
+		if phaseHook != nil {
+			phaseHook(phase)
+		}
+	}
+
 	if srv.ServerType.Name == targetType {
 		return nil
 	}
@@ -37,6 +51,7 @@ func Rescale(ctx context.Context, api hetzner.API, srv *hetzner.Server, targetTy
 	// change_type. Off → change_type intentionally omits the sleep because no
 	// shutdown just happened for the provisioner to recover from.
 	if srv.Status == hcloud.ServerStatusRunning {
+		emit("shutting_down")
 		act, err := api.ShutdownServer(ctx, srv)
 		if err != nil {
 			return fmt.Errorf("rescaler: shutdown: %w", err)
@@ -52,6 +67,7 @@ func Rescale(ctx context.Context, api hetzner.API, srv *hetzner.Server, targetTy
 	if err != nil {
 		return fmt.Errorf("rescaler: get target type: %w", err)
 	}
+	emit("changing_type")
 	act, err := api.ChangeServerType(ctx, srv, target)
 	if err != nil {
 		return err // may be wrapped hetzner.ErrUnavailable; caller classifies
@@ -65,6 +81,7 @@ func Rescale(ctx context.Context, api hetzner.API, srv *hetzner.Server, targetTy
 	// state.)
 	srv.ServerType = target
 
+	emit("powering_on")
 	act, err = api.PowerOnServer(ctx, srv)
 	if err != nil {
 		return fmt.Errorf("rescaler: poweron: %w", err)
@@ -72,6 +89,7 @@ func Rescale(ctx context.Context, api hetzner.API, srv *hetzner.Server, targetTy
 	if err := waitAction(ctx, api, act); err != nil {
 		return fmt.Errorf("rescaler: wait poweron: %w", err)
 	}
+	emit("done")
 	return nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hetznercloud/hcloud-go/hcloud"
 	"github.com/jonamat/hetzner-rescaler/internal/hcloudmock"
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 )
@@ -46,4 +47,25 @@ func TestRescaleReturnsUnavailableWhenTargetOutOfStock(t *testing.T) {
 		t.Fatalf("err = %v, want unavailable", err)
 	}
 	_ = time.Second
+}
+
+func TestRescale_InvokesPhaseHook(t *testing.T) {
+	api := hcloudmock.New()
+	srv := &hetzner.Server{ID: 1, Name: "web", Status: hcloud.ServerStatusRunning, ServerType: &hetzner.ServerType{Name: "cpx11"}}
+	api.AddServer(srv)
+
+	var phases []string
+	hook := func(p string) { phases = append(phases, p) }
+	if err := RescaleWithHook(context.Background(), api, srv, "cpx21", hook); err != nil {
+		t.Fatalf("Rescale: %v", err)
+	}
+	want := []string{"shutting_down", "changing_type", "powering_on", "done"}
+	if len(phases) != len(want) {
+		t.Fatalf("phases = %v, want %v", phases, want)
+	}
+	for i, p := range want {
+		if phases[i] != p {
+			t.Fatalf("phase[%d] = %q, want %q", i, phases[i], p)
+		}
+	}
 }
