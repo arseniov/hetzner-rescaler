@@ -5,6 +5,66 @@ import (
 	"time"
 )
 
+func seedEvent(t *testing.T, s *Store, serverID int64, kind string) int64 {
+	t.Helper()
+	id, err := s.AppendEvent(Event{
+		ServerID:    serverID,
+		Kind:        kind,
+		StartedAt:   time.Now().UTC(),
+		TriggeredBy: "test",
+	})
+	if err != nil {
+		t.Fatalf("AppendEvent: %v", err)
+	}
+	return id
+}
+
+func seedProjectAndServer(t *testing.T, s *Store) (int64, int64) {
+	t.Helper()
+	p, err := s.CreateProject("p", []byte("tok"), []byte("nonce12byts"))
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	srv, err := s.CreateServer(p.ID, Server{
+		HCloudServerID: 1, Name: "w", Label: "w",
+		BaseServerType: "cpx11", TopServerType: "cpx31",
+		FallbackChain: []string{"cpx31", "cpx11"},
+		Mode: "manual", Timezone: "UTC",
+	})
+	if err != nil {
+		t.Fatalf("CreateServer: %v", err)
+	}
+	return p.ID, srv.ID
+}
+
+func TestUpdateEventPhase_SetsColumn(t *testing.T) {
+	s, err := OpenTemp()
+	if err != nil {
+		t.Fatalf("OpenTemp: %v", err)
+	}
+	defer s.Close()
+	_, srvID := seedProjectAndServer(t, s)
+	id := seedEvent(t, s, srvID, "rescale_pending")
+
+	if err := s.UpdateEventPhase(id, "shutting_down"); err != nil {
+		t.Fatalf("UpdateEventPhase: %v", err)
+	}
+
+	events, err := s.ListEventsByServer(srvID, 10)
+	if err != nil {
+		t.Fatalf("ListEventsByServer: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("want 1 event, got %d", len(events))
+	}
+	if events[0].Phase != "shutting_down" {
+		t.Fatalf("Phase = %q, want shutting_down", events[0].Phase)
+	}
+	if !events[0].FinishedAt.IsZero() {
+		t.Fatalf("FinishedAt should still be zero, got %v", events[0].FinishedAt)
+	}
+}
+
 func TestEventAppendAndList(t *testing.T) {
 	s := newTestStore(t)
 	p, _ := s.CreateProject("p", []byte("t"), []byte("n"))

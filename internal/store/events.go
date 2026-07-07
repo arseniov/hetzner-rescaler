@@ -20,6 +20,7 @@ type Event struct {
 	Kind        string
 	FromType    string
 	ToType      string
+	Phase       string
 	StartedAt   time.Time
 	FinishedAt  time.Time
 	OK          bool
@@ -54,12 +55,57 @@ func (s *Store) AppendEvent(e Event) (int64, error) {
 	return id, nil
 }
 
+// UpdateEventPhase sets the phase column on a still-pending event row.
+// No-op if the row's finished_at is already set (the goroutine that
+// completed the rescale writes a terminal row instead of mutating this one).
+func (s *Store) UpdateEventPhase(id int64, phase string) error {
+	res, err := s.db.Exec(
+		`UPDATE events SET phase = ? WHERE id = ? AND finished_at IS NULL`,
+		phase, id,
+	)
+	if err != nil {
+		return fmt.Errorf("store: update event phase: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		// Row either missing or already finished. Treat as success — the
+		// phase update is best-effort and the caller will see no error.
+		return nil
+	}
+	if s.hub != nil {
+		// Re-fetch and broadcast so SSE delivers the updated row.
+		e, scanErr := s.getEvent(id)
+		if scanErr == nil && e != nil {
+			s.hub.Broadcast(*e)
+		}
+	}
+	return nil
+}
+
+func (s *Store) getEvent(id int64) (*Event, error) {
+	rows, err := s.db.Query(
+		`SELECT `+eventColumns+` FROM events WHERE id = ?`,
+		id,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: get event: %w", err)
+	}
+	defer rows.Close()
+	out, err := scanEvents(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out[0], nil
+}
+
 // ListEventsByServer returns up to `limit` events for the given server,
 // most recent first. The caller is responsible for providing a positive limit.
 func (s *Store) ListEventsByServer(serverID int64, limit int) ([]*Event, error) {
 	rows, err := s.db.Query(
-		`SELECT id, server_id, kind, from_type, to_type, started_at, finished_at, ok, error, triggered_by
-		 FROM events WHERE server_id = ? ORDER BY id DESC LIMIT ?`,
+		`SELECT `+eventColumns+` FROM events WHERE server_id = ? ORDER BY id DESC LIMIT ?`,
 		serverID, limit,
 	)
 	if err != nil {
@@ -81,7 +127,7 @@ func (s *Store) ListAllEvents(limit int, serverID *int64) ([]*Event, error) {
 		clauses = append(clauses, "server_id = ?")
 		args = append(args, *serverID)
 	}
-	q := `SELECT id, server_id, kind, from_type, to_type, started_at, finished_at, ok, error, triggered_by FROM events`
+	q := `SELECT ` + eventColumns + ` FROM events`
 	if len(clauses) > 0 {
 		q += " WHERE " + strings.Join(clauses, " AND ")
 	}
@@ -104,8 +150,7 @@ func (s *Store) ListAllEvents(limit int, serverID *int64) ([]*Event, error) {
 // matching rows in the range.
 func (s *Store) ListEventsInRange(from, to time.Time) ([]*Event, error) {
 	rows, err := s.db.Query(
-		`SELECT id, server_id, kind, from_type, to_type, started_at, finished_at, ok, error, triggered_by
-		 FROM events WHERE started_at >= ? AND started_at <= ?
+		`SELECT `+eventColumns+` FROM events WHERE started_at >= ? AND started_at <= ?
 		 ORDER BY id DESC`,
 		from.Unix(), to.Unix(),
 	)
@@ -116,6 +161,8 @@ func (s *Store) ListEventsInRange(from, to time.Time) ([]*Event, error) {
 	return scanEvents(rows)
 }
 
+const eventColumns = `id, server_id, kind, from_type, to_type, phase, started_at, finished_at, ok, error, triggered_by`
+
 func scanEvents(rows *sql.Rows) ([]*Event, error) {
 	var out []*Event
 	for rows.Next() {
@@ -123,19 +170,21 @@ func scanEvents(rows *sql.Rows) ([]*Event, error) {
 			e        Event
 			started  int64
 			finished sql.NullInt64
+			phase    sql.NullString
 			okInt    int
 			fromType sql.NullString
 			toType   sql.NullString
 			errMsg   sql.NullString
 		)
 		if err := rows.Scan(
-			&e.ID, &e.ServerID, &e.Kind, &fromType, &toType,
+			&e.ID, &e.ServerID, &e.Kind, &fromType, &toType, &phase,
 			&started, &finished, &okInt, &errMsg, &e.TriggeredBy,
 		); err != nil {
 			return nil, fmt.Errorf("store: scan event: %w", err)
 		}
 		e.FromType = fromType.String
 		e.ToType = toType.String
+		e.Phase = phase.String
 		e.Error = errMsg.String
 		e.StartedAt = time.Unix(started, 0).UTC()
 		if finished.Valid {
