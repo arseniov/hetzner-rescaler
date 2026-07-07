@@ -19,7 +19,7 @@ func TestOpenCreatesDBAndRunsMigrations(t *testing.T) {
 
 	// schema_version should be at the current version
 	var v int
-	if err := s.DB().QueryRow(`SELECT version FROM schema_version LIMIT 1`).Scan(&v); err != nil {
+	if err := s.DB().QueryRow(`SELECT MAX(version) FROM schema_version`).Scan(&v); err != nil {
 		t.Fatalf("query schema_version: %v", err)
 	}
 	if v != currentSchemaVersion {

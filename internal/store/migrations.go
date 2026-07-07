@@ -7,6 +7,7 @@ import "fmt"
 // (safe to re-run on an already-current DB) so that crash recovery is safe.
 var migrations = []func(*Store) error{
 	migration001_initial,
+	migration002_add_phase,
 }
 
 func (s *Store) migrate() error {
@@ -107,6 +108,13 @@ func migration001_initial(s *Store) error {
 		if _, err := s.db.Exec(q); err != nil {
 			return fmt.Errorf("exec: %s: %w", q[:40], err)
 		}
+	}
+	return nil
+}
+
+func migration002_add_phase(s *Store) error {
+	if _, err := s.db.Exec(`ALTER TABLE events ADD COLUMN phase TEXT`); err != nil {
+		return fmt.Errorf("add phase column: %w", err)
 	}
 	return nil
 }

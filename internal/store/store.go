@@ -13,7 +13,7 @@ import (
 )
 
 // currentSchemaVersion is incremented whenever migrations.go changes.
-const currentSchemaVersion = 1
+const currentSchemaVersion = 2
 
 // Store is the SQLite-backed persistence layer.
 type Store struct {

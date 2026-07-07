@@ -1,9 +1,52 @@
 package store
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
 )
+
+func TestMigrationAddsPhaseColumn(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	s, _ := Open(dbPath)
+	defer s.Close()
+
+	rows, err := s.DB().Query(`PRAGMA table_info(events)`)
+	if err != nil {
+		t.Fatalf("PRAGMA: %v", err)
+	}
+	defer rows.Close()
+	var hasPhase bool
+	for rows.Next() {
+		var (
+			cid            int
+			name, ctype    string
+			notnull, pk    int
+			dfltValue      sql.NullString
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		if name == "phase" {
+			hasPhase = true
+			if ctype != "TEXT" {
+				t.Fatalf("phase column type = %q, want TEXT", ctype)
+			}
+		}
+	}
+	if !hasPhase {
+		t.Fatalf("events table missing 'phase' column")
+	}
+}
+
+func TestSchemaVersionIs2(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	s, _ := Open(dbPath)
+	defer s.Close()
+	if v := readSchemaVersion(t, s); v != 2 {
+		t.Fatalf("schema version = %d, want 2", v)
+	}
+}
 
 func TestMigrationsAreForwardOnly(t *testing.T) {
 	// Apply migrations twice in a row, version must not regress.
@@ -45,7 +88,7 @@ func TestRequiredTablesExist(t *testing.T) {
 func readSchemaVersion(t *testing.T, s *Store) int {
 	t.Helper()
 	var v int
-	if err := s.DB().QueryRow(`SELECT version FROM schema_version LIMIT 1`).Scan(&v); err != nil {
+	if err := s.DB().QueryRow(`SELECT MAX(version) FROM schema_version`).Scan(&v); err != nil {
 		t.Fatalf("read schema_version: %v", err)
 	}
 	return v
