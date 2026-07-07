@@ -3,6 +3,7 @@ package rescaler
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -293,5 +294,58 @@ func TestRunRescale_HappyPathWritesTerminalWithReconciledToType(t *testing.T) {
 	}
 	if !terminal.OK {
 		t.Fatalf("terminal row ok = false, want true: %+v", terminal)
+	}
+}
+
+func TestRunRescale_FailureWritesFailedTerminal(t *testing.T) {
+	s, _ := store.OpenTemp()
+	defer s.Close()
+	_, srvID := seedRescaleTestProjectAndServer(t, s)
+	srv, _ := s.GetServer(srvID)
+
+	mock := hcloudmock.New()
+	mock.AddServer(&hetzner.Server{
+		ID: srv.HCloudServerID, Name: srv.Name,
+		ServerType: &hetzner.ServerType{Name: "cpx11"},
+	})
+	mock.SetChangeTypeOverride(func(target *hetzner.ServerType) error {
+		return errors.New("simulated change_type failure")
+	})
+
+	m := NewManager(s)
+	_ = m.Start(context.Background())
+	m.setAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
+		return mock, nil
+	})
+
+	_, _ = m.Submit(context.Background(), srv, "cpx31", "api")
+
+	// Wait for the goroutine to finish.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		m.mu.Lock()
+		_, busy := m.jobs[srvID]
+		m.mu.Unlock()
+		if !busy {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	events, _ := s.ListEventsByServer(srvID, 20)
+	var terminal *store.Event
+	for _, e := range events {
+		if e.Kind == "rescale_failed" {
+			terminal = e
+		}
+	}
+	if terminal == nil {
+		t.Fatalf("expected rescale_failed row, got %+v", events)
+	}
+	if terminal.OK {
+		t.Fatal("terminal OK should be false")
+	}
+	if !strings.Contains(terminal.Error, "simulated change_type failure") {
+		t.Fatalf("terminal error = %q, want it to mention simulated failure", terminal.Error)
 	}
 }
