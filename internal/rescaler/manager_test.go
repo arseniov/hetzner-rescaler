@@ -402,3 +402,65 @@ func TestRunRescale_PanicWritesFailedTerminal(t *testing.T) {
 		t.Fatalf("expected rescale_failed with panic error, got %+v", events)
 	}
 }
+
+func TestShutdown_CancelsInflightJob(t *testing.T) {
+	s, _ := store.OpenTemp()
+	defer s.Close()
+	_, srvID := seedRescaleTestProjectAndServer(t, s)
+	srv, _ := s.GetServer(srvID)
+
+	// Use an API whose GetAction blocks until ctx.Done().
+	blocking := &blockingAPI{}
+
+	m := NewManager(s)
+	_ = m.Start(context.Background())
+	m.setAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
+		return blocking, nil
+	})
+
+	_, _ = m.Submit(context.Background(), srv, "cpx31", "api")
+
+	// Give the goroutine a moment to enter waitAction.
+	time.Sleep(50 * time.Millisecond)
+
+	// Shutdown with a tight deadline.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := m.Shutdown(shutdownCtx); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+
+	// The terminal row should be rescale_failed with a cancel error.
+	deadline := time.Now().Add(3 * time.Second)
+	var failed *store.Event
+	for time.Now().Before(deadline) && failed == nil {
+		events, _ := s.ListEventsByServer(srvID, 20)
+		for _, e := range events {
+			if e.Kind == "rescale_failed" && e.FinishedAt.After(time.Time{}) {
+				failed = e
+				break
+			}
+		}
+		if failed == nil {
+			time.Sleep(50 * time.Millisecond)
+		}
+	}
+	if failed == nil {
+		t.Fatal("Shutdown did not produce a rescale_failed terminal")
+	}
+}
+
+type blockingAPI struct{ hetzner.API }
+
+func (b *blockingAPI) GetServer(ctx context.Context, id int) (*hetzner.Server, error) {
+	return &hetzner.Server{ID: id, ServerType: &hetzner.ServerType{Name: "cpx11"}}, nil
+}
+
+func (b *blockingAPI) ShutdownServer(ctx context.Context, srv *hetzner.Server) (*hetzner.Action, error) {
+	return &hetzner.Action{ID: 1, Status: hcloud.ActionStatusRunning, Command: "shutdown"}, nil
+}
+
+func (b *blockingAPI) GetAction(ctx context.Context, id int) (*hetzner.Action, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}

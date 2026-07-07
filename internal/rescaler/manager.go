@@ -227,6 +227,39 @@ func (m *Manager) resolveAPI(ctx context.Context, projectID int64) (hetzner.API,
 	return m.apiResolver(ctx, projectID)
 }
 
+// Shutdown cancels every in-flight goroutine and waits for them to
+// drain (or for ctx to expire). Each goroutine's defer writes a
+// rescale_failed terminal row with the cancellation error.
+func (m *Manager) Shutdown(ctx context.Context) error {
+	m.mu.Lock()
+	cancels := make([]context.CancelFunc, 0, len(m.jobs))
+	for _, c := range m.jobs {
+		cancels = append(cancels, c)
+	}
+	m.mu.Unlock()
+
+	for _, c := range cancels {
+		c()
+	}
+
+	// Poll for the map to drain.
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		m.mu.Lock()
+		remaining := len(m.jobs)
+		m.mu.Unlock()
+		if remaining == 0 {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("rescaler: shutdown timed out with %d job(s) in flight", remaining)
+		case <-ticker.C:
+		}
+	}
+}
+
 // apiResolver is set by the cmd wiring. Tests override via setAPIResolver.
 type apiResolver func(ctx context.Context, projectID int64) (hetzner.API, error)
 
