@@ -37,6 +37,44 @@ func seedProjectAndServer(t *testing.T, s *Store) (int64, int64) {
 	return p.ID, srv.ID
 }
 
+func TestUpdateEventFinished_SetsFinishedAtAndError(t *testing.T) {
+	s, _ := OpenTemp()
+	defer s.Close()
+	_, srvID := seedProjectAndServer(t, s)
+	id := seedEvent(t, s, srvID, "rescale_pending")
+
+	if err := s.UpdateEventFinished(id, false, "boom"); err != nil {
+		t.Fatalf("UpdateEventFinished: %v", err)
+	}
+
+	events, _ := s.ListEventsByServer(srvID, 10)
+	if len(events) != 1 || !events[0].FinishedAt.After(time.Time{}) {
+		t.Fatalf("FinishedAt not set: %+v", events[0])
+	}
+	if events[0].Error != "boom" {
+		t.Fatalf("Error = %q, want boom", events[0].Error)
+	}
+}
+
+func TestUpdateEventFinished_ClearsErrorOnSuccess(t *testing.T) {
+	s, _ := OpenTemp()
+	defer s.Close()
+	_, srvID := seedProjectAndServer(t, s)
+	id := seedEvent(t, s, srvID, "rescale_pending")
+
+	if err := s.UpdateEventFinished(id, true, ""); err != nil {
+		t.Fatalf("UpdateEventFinished: %v", err)
+	}
+
+	events, _ := s.ListEventsByServer(srvID, 10)
+	if events[0].Error != "" {
+		t.Fatalf("Error = %q, want empty", events[0].Error)
+	}
+	if !events[0].FinishedAt.After(time.Time{}) {
+		t.Fatalf("FinishedAt not set")
+	}
+}
+
 func TestUpdateEventPhase_SetsColumn(t *testing.T) {
 	s, err := OpenTemp()
 	if err != nil {

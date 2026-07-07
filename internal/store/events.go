@@ -82,6 +82,38 @@ func (s *Store) UpdateEventPhase(id int64, phase string) error {
 	return nil
 }
 
+// UpdateEventFinished marks the pending event row terminal: sets
+// finished_at to the current UTC time and writes the error message
+// (empty string on success). Idempotent: re-running on an already-finished
+// row is a no-op.
+func (s *Store) UpdateEventFinished(id int64, ok bool, errMsg string) error {
+	now := time.Now().UTC().Unix()
+	res, err := s.db.Exec(
+		`UPDATE events SET finished_at = ?, ok = ?, error = ? WHERE id = ? AND finished_at IS NULL`,
+		now, boolToInt(ok), errMsg, id,
+	)
+	if err != nil {
+		return fmt.Errorf("store: update event finished: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return nil
+	}
+	if s.hub != nil {
+		if e, scanErr := s.getEvent(id); scanErr == nil && e != nil {
+			s.hub.Broadcast(*e)
+		}
+	}
+	return nil
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 func (s *Store) getEvent(id int64) (*Event, error) {
 	rows, err := s.db.Query(
 		`SELECT `+eventColumns+` FROM events WHERE id = ?`,
