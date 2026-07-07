@@ -2,6 +2,7 @@ package rescaler
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -201,5 +202,28 @@ func TestSubmit_InsertsPendingRowAndReturnsID(t *testing.T) {
 	}
 	if !pending.FinishedAt.IsZero() {
 		t.Fatalf("FinishedAt should be zero, got %v", pending.FinishedAt)
+	}
+}
+
+func TestSubmit_RejectsWhenAlreadyInProgress(t *testing.T) {
+	s, _ := store.OpenTemp()
+	defer s.Close()
+	_, srvID := seedRescaleTestProjectAndServer(t, s)
+	srv, _ := s.GetServer(srvID)
+
+	m := NewManager(s)
+	_ = m.Start(context.Background())
+	m.setAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
+		return hcloudmock.New(), nil
+	})
+
+	// Manually mark the server busy (the goroutine hasn't been introduced yet).
+	m.mu.Lock()
+	m.jobs[srvID] = func() {}
+	m.mu.Unlock()
+
+	_, err := m.Submit(context.Background(), srv, "cpx31", "api")
+	if !errors.Is(err, ErrAlreadyInProgress) {
+		t.Fatalf("err = %v, want ErrAlreadyInProgress", err)
 	}
 }

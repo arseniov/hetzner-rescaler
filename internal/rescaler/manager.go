@@ -116,6 +116,13 @@ func (m *Manager) Submit(ctx context.Context, srv *store.Server, target string, 
 	if err != nil {
 		return 0, err
 	}
+
+	// Register the job in the map. Use a no-op cancel for now; Task 10
+	// replaces it with the goroutine's real cancel function.
+	m.mu.Lock()
+	m.jobs[srv.ID] = func() {}
+	m.mu.Unlock()
+
 	return id, nil
 }
 
