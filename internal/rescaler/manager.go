@@ -41,6 +41,13 @@ func NewManager(s *store.Store) *Manager {
 // Start scans for orphaned rescale_pending rows from a previous process
 // run and marks each as failed. Idempotent — safe to call on every boot.
 // Must be called once before any Submit.
+//
+// Partial-failure semantics: if AppendEvent or UpdateEventFinished fails
+// mid-loop, Start returns the error and any remaining orphans are left for
+// the next boot to retry. The already-written audit rows remain, which may
+// produce duplicate rescale_failed rows on retry. This is acceptable for a
+// boot-time recovery operation: the operator sees at most one extra audit
+// row, the pending row does eventually close out, and no data is lost.
 func (m *Manager) Start(ctx context.Context) error {
 	rows, err := m.store.DB().QueryContext(ctx,
 		`SELECT id, server_id FROM events
