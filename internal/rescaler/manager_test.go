@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hetznercloud/hcloud-go/hcloud"
 	"github.com/jonamat/hetzner-rescaler/internal/hcloudmock"
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 	"github.com/jonamat/hetzner-rescaler/internal/store"
@@ -347,5 +348,57 @@ func TestRunRescale_FailureWritesFailedTerminal(t *testing.T) {
 	}
 	if !strings.Contains(terminal.Error, "simulated change_type failure") {
 		t.Fatalf("terminal error = %q, want it to mention simulated failure", terminal.Error)
+	}
+}
+
+type panicAPI struct{ hetzner.API }
+
+func (panicAPI) GetServer(ctx context.Context, id int) (*hetzner.Server, error) {
+	// Submit calls GetServer first; returning a valid server here lets Submit
+	// succeed so the goroutine is actually spawned. The panic lives in
+	// ShutdownServer — the first API call the goroutine's runRescale path
+	// makes (the rescale is from running → cpx31, so RescaleWithHook hits
+	// the shutdown branch).
+	return &hetzner.Server{ID: id, Name: "w", Status: hcloud.ServerStatusRunning, ServerType: &hetzner.ServerType{Name: "cpx11"}}, nil
+}
+
+func (panicAPI) ShutdownServer(ctx context.Context, srv *hetzner.Server) (*hetzner.Action, error) {
+	panic("boom")
+}
+
+func TestRunRescale_PanicWritesFailedTerminal(t *testing.T) {
+	s, _ := store.OpenTemp()
+	defer s.Close()
+	_, srvID := seedRescaleTestProjectAndServer(t, s)
+	srv, _ := s.GetServer(srvID)
+
+	m := NewManager(s)
+	_ = m.Start(context.Background())
+	m.setAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
+		return panicAPI{}, nil
+	})
+
+	_, _ = m.Submit(context.Background(), srv, "cpx31", "api")
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		m.mu.Lock()
+		_, busy := m.jobs[srvID]
+		m.mu.Unlock()
+		if !busy {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	events, _ := s.ListEventsByServer(srvID, 20)
+	var panicEvent *store.Event
+	for _, e := range events {
+		if e.Kind == "rescale_failed" && strings.Contains(e.Error, "panic") {
+			panicEvent = e
+		}
+	}
+	if panicEvent == nil {
+		t.Fatalf("expected rescale_failed with panic error, got %+v", events)
 	}
 }
