@@ -2,40 +2,28 @@ package rescaler
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
+	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 	"github.com/jonamat/hetzner-rescaler/internal/store"
 )
 
 // ErrAlreadyInProgress is returned by Manager.Submit when a goroutine for
-// the given server is already running. The handler maps this to a 409
-// response with the pending event ID so the UI can link to it.
-var ErrAlreadyInProgress = context.DeadlineExceeded // placeholder; replaced in Task 8
+// the given server is already running. The handler maps this to a 409.
+var ErrAlreadyInProgress = errors.New("rescaler: rescale already in progress")
 
-// Manager owns the lifecycle of async rescale goroutines. One instance
-// is shared across the API and the scheduler (the scheduler is the same
-// process in `serve` mode; the API is the only consumer).
-//
-// Concurrency model:
-//   - jobs is the single source of truth for "is this server mid-rescale?"
-//   - Each entry holds the goroutine's cancel function so Shutdown can
-//     cancel all in-flight jobs gracefully.
-//   - The store is the secondary source of truth (via the rescale_pending
-//     row) so a process restart can recover orphaned jobs.
+// Manager owns the lifecycle of async rescale goroutines.
 type Manager struct {
-	store *store.Store
-
-	mu   sync.Mutex
-	jobs map[int64]context.CancelFunc // serverID -> cancel
+	store       *store.Store
+	mu          sync.Mutex
+	jobs        map[int64]context.CancelFunc
+	apiResolver apiResolver
 }
 
-// NewManager constructs a Manager bound to the given store.
 func NewManager(s *store.Store) *Manager {
-	return &Manager{
-		store: s,
-		jobs:  make(map[int64]context.CancelFunc),
-	}
+	return &Manager{store: s, jobs: make(map[int64]context.CancelFunc)}
 }
 
 // Start scans for orphaned rescale_pending rows from a previous process
@@ -72,11 +60,8 @@ func (m *Manager) Start(ctx context.Context) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
-
 	now := time.Now().UTC()
 	for _, o := range orphans {
-		// Append a rescale_failed audit row first so the operator sees a
-		// terminal event with a clear cause.
 		if _, err := m.store.AppendEvent(store.Event{
 			ServerID:    o.serverID,
 			Kind:        "rescale_failed",
@@ -88,10 +73,63 @@ func (m *Manager) Start(ctx context.Context) error {
 		}); err != nil {
 			return err
 		}
-		// Then close out the pending row.
 		if err := m.store.UpdateEventFinished(o.id, false, "server restarted mid-rescale"); err != nil {
 			return err
 		}
 	}
 	return nil
 }
+
+// Submit reserves the server for an async rescale. Returns the new
+// pending event ID, or ErrAlreadyInProgress if the server already has a
+// goroutine in flight. The actual rescale work is not started here —
+// Task 10 introduces the goroutine + runRescale. This task only proves
+// the row insertion + concurrency check.
+func (m *Manager) Submit(ctx context.Context, srv *store.Server, target string, triggeredBy string) (int64, error) {
+	m.mu.Lock()
+	if _, busy := m.jobs[srv.ID]; busy {
+		m.mu.Unlock()
+		return 0, ErrAlreadyInProgress
+	}
+	m.mu.Unlock()
+
+	api, err := m.resolveAPI(ctx, srv.ProjectID)
+	if err != nil {
+		return 0, err
+	}
+	hserver, err := api.GetServer(ctx, srv.HCloudServerID)
+	if err != nil {
+		return 0, err
+	}
+	fromType := ""
+	if hserver != nil && hserver.ServerType != nil {
+		fromType = hserver.ServerType.Name
+	}
+	now := time.Now().UTC()
+	id, err := m.store.AppendEvent(store.Event{
+		ServerID:    srv.ID,
+		Kind:        "rescale_pending",
+		FromType:    fromType,
+		StartedAt:   now,
+		TriggeredBy: triggeredBy,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+// resolveAPI returns a hetzner.API for the given project. Wired in
+// Task 14 when the Manager is integrated into Deps; for now it's a
+// hook so tests can stub via setAPIResolver.
+func (m *Manager) resolveAPI(ctx context.Context, projectID int64) (hetzner.API, error) {
+	if m.apiResolver == nil {
+		return nil, errors.New("rescaler: api resolver not configured")
+	}
+	return m.apiResolver(ctx, projectID)
+}
+
+// apiResolver is set by the cmd wiring. Tests override via setAPIResolver.
+type apiResolver func(ctx context.Context, projectID int64) (hetzner.API, error)
+
+func (m *Manager) setAPIResolver(fn apiResolver) { m.apiResolver = fn }

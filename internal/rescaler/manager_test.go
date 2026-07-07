@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jonamat/hetzner-rescaler/internal/hcloudmock"
+	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 	"github.com/jonamat/hetzner-rescaler/internal/store"
 )
 
@@ -159,5 +161,45 @@ func TestStart_RecoversMultipleOrphans(t *testing.T) {
 		if auditCount != 1 {
 			t.Errorf("server %d: auditCount = %d, want 1", srvID, auditCount)
 		}
+	}
+}
+
+func TestSubmit_InsertsPendingRowAndReturnsID(t *testing.T) {
+	s, _ := store.OpenTemp()
+	defer s.Close()
+	_, srvID := seedRescaleTestProjectAndServer(t, s)
+	srv, _ := s.GetServer(srvID)
+
+	m := NewManager(s)
+	if err := m.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	mock := hcloudmock.New()
+	mock.AddServer(&hetzner.Server{ID: int(srv.HCloudServerID), ServerType: &hetzner.ServerType{Name: "cpx11"}})
+	m.setAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
+		return mock, nil
+	})
+	id, err := m.Submit(context.Background(), srv, "cpx31", "api")
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	if id == 0 {
+		t.Fatal("expected non-zero pending event ID")
+	}
+	events, _ := s.ListEventsByServer(srvID, 10)
+	var pending *store.Event
+	for _, e := range events {
+		if e.ID == id && e.Kind == "rescale_pending" {
+			pending = e
+		}
+	}
+	if pending == nil {
+		t.Fatalf("pending row not written: %+v", events)
+	}
+	if pending.FromType != "cpx11" {
+		t.Fatalf("FromType = %q, want cpx11 (current)", pending.FromType)
+	}
+	if !pending.FinishedAt.IsZero() {
+		t.Fatalf("FinishedAt should be zero, got %v", pending.FinishedAt)
 	}
 }
