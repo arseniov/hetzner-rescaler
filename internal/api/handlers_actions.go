@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/jonamat/hetzner-rescaler/internal/rescaler"
 	"github.com/jonamat/hetzner-rescaler/internal/store"
 )
 
@@ -32,15 +33,41 @@ func (d Deps) handleRescale(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "direction must be 'up' or 'down'")
 		return
 	}
-	if d.Rescaler == nil {
-		writeJSONError(w, http.StatusServiceUnavailable, "rescaler not configured")
+	if d.Manager == nil {
+		writeJSONError(w, http.StatusServiceUnavailable, "rescaler manager not configured")
 		return
 	}
-	if err := d.Rescaler(r.Context(), srv, target); err != nil {
-		writeJSONError(w, http.StatusBadGateway, "rescale failed: "+err.Error())
+	id, err := d.Manager.Submit(r.Context(), srv, target, "api")
+	if err != nil {
+		if errors.Is(err, rescaler.ErrAlreadyInProgress) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error":            "rescale already in progress",
+				"pending_event_id": d.activePendingID(srv.ID),
+			})
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "rescale submit failed: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"status": "rescale initiated", "target": target})
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"status":           "rescale initiated",
+		"target":           target,
+		"pending_event_id": id,
+	})
+}
+
+// activePendingID returns the ID of the still-pending rescale_pending
+// event for srv, or 0 if there is none (or if the lookup fails).
+// Convenience wrapper used by handlers that want to surface the pending
+// ID alongside other response fields.
+func (d Deps) activePendingID(srvID int64) int64 {
+	pending, err := d.Store.ActivePendingEventForServer(srvID)
+	if err != nil || pending == nil {
+		return 0
+	}
+	return pending.ID
 }
 
 func (d Deps) handlePromote(w http.ResponseWriter, r *http.Request) {

@@ -31,11 +31,18 @@ type Manager struct {
 	mu          sync.Mutex
 	jobs        map[int64]context.CancelFunc
 	apiResolver apiResolver
+	onSubmit    func()
 }
 
 func NewManager(s *store.Store) *Manager {
 	return &Manager{store: s, jobs: make(map[int64]context.CancelFunc)}
 }
+
+// SetOnSubmit installs a callback fired synchronously at the very start of
+// every Submit call, BEFORE the busy check. Useful for tests that need to
+// observe "the API reached the Manager" without depending on the spawned
+// goroutine's progress. Passing nil clears the callback.
+func (m *Manager) SetOnSubmit(fn func()) { m.onSubmit = fn }
 
 // Start scans for orphaned rescale_pending rows from a previous process
 // run and marks each as failed. Idempotent — safe to call on every boot.
@@ -99,6 +106,13 @@ func (m *Manager) Start(ctx context.Context) error {
 //   - ErrAlreadyInProgress: another goroutine is already working on srv.
 //   - any API/store error during the synchronous setup phase.
 func (m *Manager) Submit(ctx context.Context, srv *store.Server, target string, triggeredBy string) (int64, error) {
+	// Fire the onSubmit hook first (synchronously, before any work). Tests
+	// use this to confirm "the API reached the Manager" without waiting on
+	// the spawned goroutine. Safe when nil.
+	if m.onSubmit != nil {
+		m.onSubmit()
+	}
+
 	m.mu.Lock()
 	if _, busy := m.jobs[srv.ID]; busy {
 		m.mu.Unlock()
@@ -219,7 +233,7 @@ func (m *Manager) runRescale(ctx context.Context, srv *store.Server, hserver *he
 
 // resolveAPI returns a hetzner.API for the given project. Wired in
 // Task 14 when the Manager is integrated into Deps; for now it's a
-// hook so tests can stub via setAPIResolver.
+// hook so tests can stub via SetAPIResolver.
 func (m *Manager) resolveAPI(ctx context.Context, projectID int64) (hetzner.API, error) {
 	if m.apiResolver == nil {
 		return nil, errors.New("rescaler: api resolver not configured")
@@ -260,7 +274,10 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 	}
 }
 
-// apiResolver is set by the cmd wiring. Tests override via setAPIResolver.
+// apiResolver is set by the cmd wiring. Tests override via SetAPIResolver.
 type apiResolver func(ctx context.Context, projectID int64) (hetzner.API, error)
 
-func (m *Manager) setAPIResolver(fn apiResolver) { m.apiResolver = fn }
+// SetAPIResolver wires the Manager to the project's per-project API
+// factory. Called once at process startup by cmd/serve.go (and by tests
+// to inject a stub).
+func (m *Manager) SetAPIResolver(fn apiResolver) { m.apiResolver = fn }

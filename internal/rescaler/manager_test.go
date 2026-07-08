@@ -179,7 +179,7 @@ func TestSubmit_InsertsPendingRowAndReturnsID(t *testing.T) {
 	}
 	mock := hcloudmock.New()
 	mock.AddServer(&hetzner.Server{ID: int(srv.HCloudServerID), ServerType: &hetzner.ServerType{Name: "cpx11"}})
-	m.setAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
+	m.SetAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
 		return mock, nil
 	})
 	id, err := m.Submit(context.Background(), srv, "cpx31", "api")
@@ -215,7 +215,7 @@ func TestSubmit_RejectsWhenAlreadyInProgress(t *testing.T) {
 
 	m := NewManager(s)
 	_ = m.Start(context.Background())
-	m.setAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
+	m.SetAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
 		return hcloudmock.New(), nil
 	})
 
@@ -244,7 +244,7 @@ func TestRunRescale_HappyPathWritesTerminalWithReconciledToType(t *testing.T) {
 
 	m := NewManager(s)
 	_ = m.Start(context.Background())
-	m.setAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
+	m.SetAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
 		return mock, nil
 	})
 
@@ -315,7 +315,7 @@ func TestRunRescale_FailureWritesFailedTerminal(t *testing.T) {
 
 	m := NewManager(s)
 	_ = m.Start(context.Background())
-	m.setAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
+	m.SetAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
 		return mock, nil
 	})
 
@@ -374,7 +374,7 @@ func TestRunRescale_PanicWritesFailedTerminal(t *testing.T) {
 
 	m := NewManager(s)
 	_ = m.Start(context.Background())
-	m.setAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
+	m.SetAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
 		return panicAPI{}, nil
 	})
 
@@ -414,7 +414,7 @@ func TestShutdown_CancelsInflightJob(t *testing.T) {
 
 	m := NewManager(s)
 	_ = m.Start(context.Background())
-	m.setAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
+	m.SetAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
 		return blocking, nil
 	})
 

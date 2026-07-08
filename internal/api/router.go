@@ -4,12 +4,12 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 
 	"github.com/jonamat/hetzner-rescaler/internal/crypto"
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
+	"github.com/jonamat/hetzner-rescaler/internal/rescaler"
 	"github.com/jonamat/hetzner-rescaler/internal/store"
 )
 
@@ -42,10 +42,11 @@ type Deps struct {
 	// handlers that talk to Hetzner (refresh, server-types).
 	APIFor func(projectID int64) (hetzner.API, error)
 
-	// Rescaler runs a rescale. It is a function (not a method on a struct)
-	// so tests can stub it. In production the cmd layer wires it to
-	// scheduler.dispatch() or rescaler.RescaleWithFallback.
-	Rescaler func(ctx context.Context, srv *store.Server, target string) error
+	// Manager runs rescale work asynchronously. handleRescale calls
+	// Manager.Submit and returns 202 immediately with the pending event
+	// ID; Manager.runRescale walks the rescale phases in a goroutine
+	// and writes terminal event rows.
+	Manager *rescaler.Manager
 }
 
 // NewRouter builds the HTTP mux. /api/healthz is always registered.
@@ -100,7 +101,3 @@ func NewRouter(deps Deps) http.Handler {
 
 	return mux
 }
-
-// unused-import guard so the context package is referenced from this file
-// even before later tasks add their own context-aware handlers.
-var _ = context.Background

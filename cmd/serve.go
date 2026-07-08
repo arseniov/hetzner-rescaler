@@ -76,13 +76,30 @@ func runServe(cmd *cobra.Command, args []string) error {
 	eventHub := broadcast.NewHub[store.Event]()
 	st.SetBroadcastHub(eventHub)
 
+	// Rescale manager: owns the async rescale goroutines. Built first so it
+	// can Start (recovery of orphaned pending rows) before the API begins
+	// serving. The resolver wires Manager to the per-project API factory
+	// so each Submit gets the correct project's hetzner.API.
+	rescalerManager := rescalerManager(st)
+
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+	if err := rescalerManager.Start(ctx); err != nil {
+		return fmt.Errorf("serve: rescaler manager start: %w", err)
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+		_ = rescalerManager.Shutdown(shutdownCtx)
+	}()
+
 	deps := api.Deps{
 		InternalToken: token,
 		SessionSecret: sessionSecret,
 		Store:         st,
 		Keyring:       key,
 		APIFor:        apiFactory(st),
-		Rescaler:      rescalerExecutor(st),
+		Manager:       rescalerManager,
 	}
 
 	// Compose: the API server only owns /api/*. The SPA is served by a
@@ -101,9 +118,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -143,16 +157,14 @@ func apiFactory(s *store.Store) func(projectID int64) (hetzner.API, error) {
 	}
 }
 
-// rescalerExecutor wires the API's Rescaler field to the rescaler
-// package's RescaleOnce helper. It does NOT start the scheduler — the
-// CLI `start` subcommand does that (and the scheduler can run in a
-// separate process).
-func rescalerExecutor(s *store.Store) func(ctx context.Context, srv *store.Server, target string) error {
-	return func(ctx context.Context, srv *store.Server, target string) error {
-		api, err := apiFactory(s)(srv.ProjectID)
-		if err != nil {
-			return err
-		}
-		return rescaler.RescaleOnce(ctx, api, srv, target, s)
-	}
+// rescalerManager builds the rescaler.Manager wired to the project's
+// per-project API factory. Start/Stop are the caller's responsibility
+// (runServe calls them).
+func rescalerManager(s *store.Store) *rescaler.Manager {
+	m := rescaler.NewManager(s)
+	factory := apiFactory(s)
+	m.SetAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
+		return factory(projectID)
+	})
+	return m
 }
