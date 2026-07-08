@@ -201,5 +201,11 @@
   "server_type_role_current": "CURRENT",
   "server_type_role_base": "BASE",
   "server_type_role_top": "TOP",
-  "server_type_role_fallback": "FALLBACK"
+  "server_type_role_fallback": "FALLBACK",
+  "server_type_multiselect_empty": "No fallback types yet. Add one below.",
+  "server_type_multiselect_chip_list_label": "Fallback chain (drag to reorder)",
+  "server_type_multiselect_add_label": "Add a fallback type",
+  "server_type_multiselect_add_placeholder": "+ Add fallback type…",
+  "server_type_multiselect_remove_chip": "Remove {name}",
+  "server_type_multiselect_no_addable": "No more types available."
 }
