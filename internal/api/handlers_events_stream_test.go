@@ -146,6 +146,165 @@ func TestEventsStream_QueryTokenAccepted(t *testing.T) {
 	}
 }
 
+// TestEventsStream_EmitsRescalePendingEvent verifies that an
+// AppendEvent of kind "rescale_pending" — the in-flight marker the
+// rescaler Manager writes when a rescale starts — surfaces in the
+// stream with `event: rescale_pending` (not `event: rescale`). This
+// is the wire shape the dashboard uses to show progress UI without
+// needing to refetch the server.
+func TestEventsStream_EmitsRescalePendingEvent(t *testing.T) {
+	deps, _ := newTestDeps(t)
+	hub := broadcast.NewHub[store.Event]()
+	defer hub.Close()
+	deps.Store.SetBroadcastHub(hub)
+
+	srv := httptest.NewServer(NewRouter(deps))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/api/events/stream", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("X-Internal-Token", testInternalToken)
+	req.Header.Set("Accept", "text/event-stream")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status: want 200, got %d", resp.StatusCode)
+	}
+
+	reader := bufio.NewReader(resp.Body)
+
+	// Drain the ready frame first so the test only inspects the
+	// broadcasted event line.
+	if _, err := reader.ReadString('\n'); err != nil {
+		t.Fatalf("drain ready: %v", err)
+	}
+
+	// Broadcast a rescale_pending event from a goroutine. This is the
+	// marker the Manager writes before each phase update — we don't
+	// go through AppendEvent because the Hub has no replay buffer;
+	// we want a direct send to confirm the handler picks it up.
+	sample := store.Event{
+		ID:          7,
+		ServerID:    1,
+		Kind:        "rescale_pending",
+		Phase:       "shutting_down",
+		OK:          false,
+		TriggeredBy: "scheduler",
+	}
+	go func() {
+		hub.Broadcast(sample)
+	}()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			t.Fatalf("read line: %v", err)
+		}
+		if strings.Contains(line, "event: rescale_pending") {
+			dataLine, err := reader.ReadString('\n')
+			if err != nil {
+				t.Fatalf("read data: %v", err)
+			}
+			if !strings.HasPrefix(dataLine, "data: ") {
+				t.Fatalf("expected data line, got %q", dataLine)
+			}
+			if !strings.Contains(dataLine, `"id":7`) {
+				t.Fatalf("expected payload to contain id 7, got %q", dataLine)
+			}
+			if !strings.Contains(dataLine, `"kind":"rescale_pending"`) {
+				t.Fatalf("expected payload kind, got %q", dataLine)
+			}
+			return
+		}
+		// Skip any non-matching lines (e.g. blank line from the
+		// ready frame's trailing \n).
+	}
+	t.Fatal("did not see event: rescale_pending within 3s")
+}
+
+// TestEventsStream_EmitsRescaleEventForTerminal verifies that a
+// terminal event (rescale_completed / rescale_failed) still surfaces
+// as `event: rescale` — the contract the dashboard already depends
+// on. Adding rescale_pending as a second event name must not regress
+// the existing terminal-event wire shape.
+func TestEventsStream_EmitsRescaleEventForTerminal(t *testing.T) {
+	deps, _ := newTestDeps(t)
+	hub := broadcast.NewHub[store.Event]()
+	defer hub.Close()
+	deps.Store.SetBroadcastHub(hub)
+
+	srv := httptest.NewServer(NewRouter(deps))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/api/events/stream", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("X-Internal-Token", testInternalToken)
+	req.Header.Set("Accept", "text/event-stream")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	defer resp.Body.Close()
+
+	reader := bufio.NewReader(resp.Body)
+	if _, err := reader.ReadString('\n'); err != nil {
+		t.Fatalf("drain ready: %v", err)
+	}
+
+	sample := store.Event{
+		ID:          9,
+		ServerID:    1,
+		Kind:        "rescale_completed",
+		ToType:      "cpx31",
+		OK:          true,
+		TriggeredBy: "api",
+	}
+	go func() {
+		hub.Broadcast(sample)
+	}()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			t.Fatalf("read line: %v", err)
+		}
+		// Terminal events must keep the existing "rescale" event
+		// name — not "rescale_completed" or anything else.
+		if strings.Contains(line, "event: rescale") && !strings.Contains(line, "event: rescale_pending") {
+			dataLine, err := reader.ReadString('\n')
+			if err != nil {
+				t.Fatalf("read data: %v", err)
+			}
+			if !strings.Contains(dataLine, `"id":9`) {
+				t.Fatalf("expected payload to contain id 9, got %q", dataLine)
+			}
+			if !strings.Contains(dataLine, `"kind":"rescale_completed"`) {
+				t.Fatalf("expected payload kind, got %q", dataLine)
+			}
+			return
+		}
+	}
+	t.Fatal("did not see event: rescale for terminal within 3s")
+}
+
 // TestEventsStream_DisconnectStopsDelivery verifies that after a client
 // disconnects, no further events are delivered to that subscription.
 // We use a custom handler that mimics the production handler but with

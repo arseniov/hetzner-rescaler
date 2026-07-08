@@ -37,8 +37,14 @@ func eventsStreamAuth(internalToken, sessionSecret string, st *store.Store, h ht
 //
 // Protocol:
 //   - On connect: an immediate "ready" event with body {"ok":true}.
-//   - Each broadcast event is delivered as an "event: rescale" with the
-//     JSON-encoded EventResponse as its data payload.
+//   - Each broadcast event is delivered as either:
+//       * "event: rescale_pending" — an in-flight rescale_pending row
+//         (the Manager broadcasts a fresh row at the start of each
+//         phase; phase updates for a single rescale all ride this
+//         same event name so the client can stream progress).
+//       * "event: rescale" — any terminal event (rescale_completed or
+//         rescale_failed); the JSON-encoded EventResponse is the data
+//         payload.
 //   - A ": keepalive" comment is sent every 25 seconds to keep proxies
 //     and browsers from idling out the connection.
 //
@@ -95,7 +101,7 @@ func (d Deps) handleEventsStream(w http.ResponseWriter, r *http.Request) {
 				// rather than tearing down the stream on a marshal error.
 				continue
 			}
-			if _, err := w.Write([]byte("event: rescale\ndata: ")); err != nil {
+			if _, err := w.Write([]byte("event: " + eventName(ev.Kind) + "\ndata: ")); err != nil {
 				return
 			}
 			if _, err := w.Write(payload); err != nil {
@@ -112,6 +118,20 @@ func (d Deps) handleEventsStream(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+// eventName maps a store.Event.Kind to the SSE event name the client
+// sees on the wire. In-flight `rescale_pending` events ride the
+// `rescale_pending` event name (so the dashboard can show progress
+// without polling); every other kind — including the terminal
+// `rescale_completed` and `rescale_failed` — keeps the historical
+// `rescale` event name for backwards compatibility with existing
+// consumers.
+func eventName(kind string) string {
+	if kind == "rescale_pending" {
+		return "rescale_pending"
+	}
+	return "rescale"
 }
 
 // keepAliveUntilDone writes an SSE comment keepalive every 25 seconds
