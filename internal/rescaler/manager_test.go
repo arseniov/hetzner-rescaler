@@ -418,7 +418,9 @@ func TestShutdown_CancelsInflightJob(t *testing.T) {
 		return blocking, nil
 	})
 
-	_, _ = m.Submit(context.Background(), srv, "cpx31", "api")
+	if _, err := m.Submit(context.Background(), srv, "cpx31", "api"); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
 
 	// Give the goroutine a moment to enter waitAction.
 	time.Sleep(50 * time.Millisecond)
@@ -448,12 +450,17 @@ func TestShutdown_CancelsInflightJob(t *testing.T) {
 	if failed == nil {
 		t.Fatal("Shutdown did not produce a rescale_failed terminal")
 	}
+	if !strings.Contains(failed.Error, "context canceled") {
+		t.Fatalf("failed.Error = %q, want it to contain %q", failed.Error, "context canceled")
+	}
 }
 
 type blockingAPI struct{ hetzner.API }
 
 func (b *blockingAPI) GetServer(ctx context.Context, id int) (*hetzner.Server, error) {
-	return &hetzner.Server{ID: id, ServerType: &hetzner.ServerType{Name: "cpx11"}}, nil
+	// Status: ServerStatusRunning so RescaleWithHook hits the shutdown branch
+	// (calling our ShutdownServer), then waits in waitAction's blocking GetAction.
+	return &hetzner.Server{ID: id, Status: hcloud.ServerStatusRunning, ServerType: &hetzner.ServerType{Name: "cpx11"}}, nil
 }
 
 func (b *blockingAPI) ShutdownServer(ctx context.Context, srv *hetzner.Server) (*hetzner.Action, error) {
