@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hetznercloud/hcloud-go/hcloud"
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 	"github.com/jonamat/hetzner-rescaler/internal/rescaler"
 )
@@ -180,4 +181,71 @@ func TestDemote_RequiresAutoPromoteMode(t *testing.T) {
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("want 400 (wrong mode), got %d", rr.Code)
 	}
+}
+
+func TestRescale_ConcurrentReturns409WithPendingID(t *testing.T) {
+	deps, _ := newTestDeps(t)
+	_, sid := seedServer(t, deps, "p1", "web-1")
+
+	deps.Manager = rescaler.NewManager(deps.Store)
+	_ = deps.Manager.Start(context.Background())
+	// Use a blocking API so the first rescale is still in-flight when the
+	// second arrives.
+	deps.Manager.SetAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
+		return &blockingTestAPI{}, nil
+	})
+
+	h := NewRouter(deps)
+	body := RescaleRequest{Direction: "up", Confirm: true}
+
+	// First request — should return 202 and leave the goroutine in-flight.
+	firstReq := authedRequest(t, "POST", "/api/servers/"+itoa(sid)+"/rescale", body)
+	firstRR := recorder(t, h, firstReq)
+	if firstRR.Code != http.StatusAccepted {
+		t.Fatalf("first: want 202, got %d", firstRR.Code)
+	}
+
+	// Give the goroutine a moment to enter the rescale.
+	time.Sleep(50 * time.Millisecond)
+
+	// Second request — should return 409.
+	secondReq := authedRequest(t, "POST", "/api/servers/"+itoa(sid)+"/rescale", body)
+	secondRR := recorder(t, h, secondReq)
+	if secondRR.Code != http.StatusConflict {
+		t.Fatalf("second: want 409, got %d (body=%q)", secondRR.Code, secondRR.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(secondRR.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp["error"] != "rescale already in progress" {
+		t.Fatalf("error = %v, want 'rescale already in progress'", resp["error"])
+	}
+	if id, ok := resp["pending_event_id"].(float64); !ok || id == 0 {
+		t.Fatalf("pending_event_id missing: %v", resp["pending_event_id"])
+	}
+
+	// Clean up: cancel the in-flight goroutine so the test exits cleanly.
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = deps.Manager.Shutdown(ctx)
+	})
+}
+
+type blockingTestAPI struct{ hetzner.API }
+
+func (b *blockingTestAPI) GetServer(ctx context.Context, id int) (*hetzner.Server, error) {
+	// Status: ServerStatusRunning so RescaleWithHook hits the shutdown branch
+	// (calling our ShutdownServer), then waits in waitAction's blocking GetAction.
+	return &hetzner.Server{ID: id, Status: hcloud.ServerStatusRunning, ServerType: &hetzner.ServerType{Name: "cpx11"}}, nil
+}
+
+func (b *blockingTestAPI) ShutdownServer(ctx context.Context, srv *hetzner.Server) (*hetzner.Action, error) {
+	return &hetzner.Action{ID: 1, Status: hcloud.ActionStatusRunning, Command: "shutdown"}, nil
+}
+
+func (b *blockingTestAPI) GetAction(ctx context.Context, id int) (*hetzner.Action, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
 }
