@@ -321,8 +321,12 @@ func TestRunRescale_FailureWritesFailedTerminal(t *testing.T) {
 
 	_, _ = m.Submit(context.Background(), srv, "cpx31", "api")
 
-	// Wait for the goroutine to finish.
-	deadline := time.Now().Add(5 * time.Second)
+	// Wait for the goroutine to finish. The rescale fails fast (mock
+	// returns the override error on change_type), but the safety-net
+	// poweron at the tail of RescaleWithFallbackWithHook takes ~10s
+	// against the mock (two 5s polls for the action to reach
+	// success). Budget for that.
+	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
 		m.mu.Lock()
 		_, busy := m.jobs[srvID]
