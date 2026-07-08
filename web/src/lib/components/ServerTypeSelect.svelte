@@ -1,85 +1,89 @@
 <script lang="ts">
+  import { Select } from 'bits-ui';
   import { onMount } from 'svelte';
   import { serverTypes } from '$lib/stores/serverTypes.svelte';
   import { m } from '$lib/paraglide/messages.js';
-  import type { ServerType } from '$lib/types';
+  import type { Server, ServerType } from '$lib/types';
   import { cn } from '$lib/utils';
+  import { roleFor, type ServerTypeRole } from '$lib/utils/serverTypeRoles';
 
   /**
-   * ServerTypeSelect — single-value dropdown of Hetzner server types.
+   * ServerTypeSelect — single-value dropdown of Hetzner server types
+   * with per-option role chips (CURRENT / BASE / TOP / FALLBACK).
    *
-   * Drives three operator-facing forms (edit server base/top, add
-   * window target_type) that previously took a free-text type code.
-   * The free-text path was a real footgun: typing "cpxl1" instead of
-   * "cpx11" silently creates a server with an unknown type that the
-   * Hetzner API will reject on first rescale.
+   * Built on bits-ui Select so the same component is used on desktop
+   * (mouse) and mobile (touch) without losing keyboard nav or screen
+   * reader semantics. The native <select> we had previously was
+   * fine for the simple dropdown case but had no path to role markers;
+   * a custom dropdown was unavoidable for that affordance.
    *
-   * The dropdown is a styled native <select> rather than a bits-ui
-   * Combobox: there are only a few dozen types, the picker doesn't
-   * need to be searchable, and a native control keeps keyboard
-   * navigation and screen-reader announcements working without extra
-   * ARIA wiring.
-   *
-   * `value` is two-way bound via `$bindable()` so consumers can
-   * `bind:value` exactly like a native <select>. The component does
-   * not own the form state — it just reflects it.
+   * `server` is passed so each option can be marked with the role it
+   * plays for this specific server (current / base / top / fallback).
+   * The role chips are visual only — they never appear in the bound
+   * value, which is just the type code string.
    */
   type Props = {
     value: string;
+    /**
+     * Server whose role chip set to render. Optional because the
+     * dropdown is also used on the "Add server" form, where no server
+     * exists yet. When omitted (or null while loading), no role chips
+     * are rendered and the dropdown behaves as a plain picker.
+     */
+    server?: Server | null;
     id?: string;
     required?: boolean;
     disabled?: boolean;
-    /** Filter to only available types (default: false; sold-out types still listed). */
     onlyAvailable?: boolean;
-    /** Optional class merged onto the <select> for layout alignment. */
     class?: string;
-    /** Optional aria-label when no Label sibling is provided. */
     ariaLabel?: string;
+    placeholder?: string;
   };
   let {
     value = $bindable(),
+    server,
     id,
     required = false,
     disabled = false,
     onlyAvailable = false,
     class: className = '',
-    ariaLabel
+    ariaLabel,
+    placeholder
   }: Props = $props();
 
   onMount(() => {
-    // Fire-and-forget — `load()` is idempotent and shared across all
-    // ServerTypeSelect instances. The empty placeholder option below
-    // covers the "still loading" UX.
-    serverTypes.load().catch(() => {
-      // loadError is set on the store; the option list will simply
-      // remain empty until the operator retries by editing again.
-    });
+    serverTypes.load().catch(() => { /* loadError is set on the store */ });
   });
 
-  // Recompute option list whenever the catalog changes. `$derived` over
-  // the store field means Svelte's reactivity tracks it across the
-  // module boundary.
   let options = $derived.by<ServerType[]>(() => {
-    const all = onlyAvailable ? serverTypes.available() : serverTypes.types;
-    // Sort: available types first (sensible default for "pick one"),
-    // then alphabetical within each bucket so the list is stable.
+    const all = onlyAvailable ? serverTypes.types.filter((t) => t.available) : serverTypes.types;
     return [...all].sort((a, b) => {
       if (a.available !== b.available) return a.available ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
   });
 
-  // The current `value` may be a code the operator typed before the
-  // catalog loaded (or a Hetzner code the API returned that we don't
-  // list — e.g. a deprecated type). When the catalog doesn't contain
-  // the value, we still want to display it in the dropdown so the
-  // operator sees what's currently set.
-  let hasValue = $derived(value !== '' && value !== undefined);
+  // Role classification lives in a pure utility so it can be tested
+  // without going through bits-ui's portal-based dropdown (which
+  // jsdom can't fully exercise). See web/src/lib/utils/serverTypeRoles.ts.
+  const ROLE_FOR = roleFor;
 
-  // Pretty-print one option. Memory + cores + price are only included
-  // when the catalog row actually has them; older Hetzner responses
-  // (or the minimal `{name, available}` shape from legacy callers)
-  // collapse to just the type code.
+  function chipClass(role: ServerTypeRole): string {
+    if (role === 'current') {
+      return 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300';
+    }
+    return 'border-border bg-muted text-muted-foreground';
+  }
+
+  function chipLabel(role: ServerTypeRole): string {
+    switch (role) {
+      case 'current':  return m.server_type_role_current();
+      case 'base':     return m.server_type_role_base();
+      case 'top':      return m.server_type_role_top();
+      case 'fallback': return m.server_type_role_fallback();
+    }
+  }
+
   function describe(t: ServerType): string {
     const bits: string[] = [];
     if (typeof t.cores === 'number' && typeof t.memory_gb === 'number') {
@@ -93,41 +97,67 @@
     if (t.description) bits.push(t.description);
     return bits.length > 0 ? bits.join(' · ') : t.name;
   }
+
+  // bits-ui Select needs a non-empty value for the trigger label.
+  let selected = $derived(
+    options.find((o) => o.name === value) ??
+      (value ? { name: value, available: false } as ServerType : null)
+  );
 </script>
 
-<!--
-  Native <select> styled to match the Input primitive (hairline
-  border, ring-token focus, mono type code, no glow). When the catalog
-  is still loading we render a single disabled placeholder so the
-  field is visually identical to the other inputs — no spinners, no
-  separate "loading" state to design.
--->
-<select
-  {id}
-  {required}
-  {disabled}
-  bind:value
-  aria-label={ariaLabel}
-  class={cn(
-    'flex h-9 rounded-md border border-border bg-input px-3 py-1 text-sm text-foreground',
-    'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
-    'disabled:cursor-not-allowed disabled:opacity-50',
-    className
-  )}
->
-  {#if serverTypes.loadedAt === null && options.length === 0}
-    <option value="" disabled>{m.server_type_select_loading()}</option>
-  {:else if serverTypes.loadError && options.length === 0}
-    <option value="" disabled>{m.server_type_select_unavailable()}</option>
-  {:else}
-    {#if !required && !hasValue}
-      <option value="">—</option>
-    {/if}
-    {#if hasValue && !options.some((o) => o.name === value)}
-      <option value={value}>{value} (unknown)</option>
-    {/if}
-    {#each options as t (t.name)}
-      <option value={t.name}>{t.name} · {describe(t)}</option>
-    {/each}
-  {/if}
-</select>
+<Select.Root type="single" bind:value={() => value, (v) => (value = v ?? '')} {disabled}>
+  <Select.Trigger
+    {id}
+    {disabled}
+    aria-label={ariaLabel}
+    class={cn(
+      'flex h-9 w-full items-center justify-between rounded-md border border-border bg-input px-3 py-1 text-sm text-foreground',
+      'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
+      'disabled:cursor-not-allowed disabled:opacity-50',
+      className
+    )}
+  >
+    <Select.Value placeholder={placeholder ?? (required ? '' : '—')}>
+      {#snippet child({ props })}
+        {#if selected}
+          <span {...props}>{selected.name}</span>
+        {:else}
+          <span {...props}>{placeholder ?? (required ? '' : '—')}</span>
+        {/if}
+      {/snippet}
+    </Select.Value>
+    <span class="ml-2 text-muted-foreground" aria-hidden="true">▾</span>
+  </Select.Trigger>
+  <Select.Portal>
+    <Select.Content
+      class="z-50 max-h-72 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+    >
+      <Select.Viewport>
+        {#if !required && !value}
+          <Select.Item value="" label="—" class="px-2 py-1.5 text-sm data-[highlighted]:bg-muted">—</Select.Item>
+        {/if}
+        {#each options as t (t.name)}
+          {@const role = ROLE_FOR(t, server)}
+          <Select.Item
+            value={t.name}
+            label={`${t.name} · ${describe(t)}`}
+            class="flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm data-[highlighted]:bg-muted data-[state=checked]:bg-muted/60"
+          >
+            {#if role}
+              <span
+                class={cn(
+                  'inline-flex shrink-0 items-center rounded-sm border px-1 py-0.5 font-mono text-[9px] uppercase tracking-wider',
+                  chipClass(role)
+                )}
+              >
+                {chipLabel(role)}
+              </span>
+            {/if}
+            <span class="font-mono">{t.name}</span>
+            <span class="text-xs text-muted-foreground">· {describe(t)}</span>
+          </Select.Item>
+        {/each}
+      </Select.Viewport>
+    </Select.Content>
+  </Select.Portal>
+</Select.Root>

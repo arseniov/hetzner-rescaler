@@ -287,7 +287,7 @@
         so the operator can't typo a Hetzner type code into the form.
         `required` enforces a non-empty selection before submit.
       -->
-      <ServerTypeSelect id="w-target" bind:value={newTarget} required />
+      <ServerTypeSelect id="w-target" bind:value={newTarget} server={server} required />
     </div>
 
     <!--

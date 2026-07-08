@@ -75,6 +75,20 @@ class ServerTypesStore {
     this.loadError = null;
     this.inflight = null;
   }
+
+  /** TEST-ONLY: reset the catalog to an empty state. */
+  _reset(): void {
+    this.types = [];
+    this.loadedAt = null;
+    this.loadError = null;
+  }
+
+  /** TEST-ONLY: replace the catalog with a fixed list. */
+  _setTypesForTest(items: ServerType[]): void {
+    this.types = items;
+    this.loadedAt = Date.now();
+    this.loadError = null;
+  }
 }
 
 export const serverTypes = new ServerTypesStore();
