@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hetznercloud/hcloud-go/hcloud"
 	"github.com/jonamat/hetzner-rescaler/internal/hcloudmock"
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 )
@@ -70,5 +71,34 @@ func TestFallbackStopsOnNonUnavailableError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "network blip") {
 		t.Fatalf("err = %v, want it to mention 'network blip'", err)
+	}
+}
+
+// When the server is running and the fallback chain is walked, the server
+// must be shut down exactly once — not once per failed chain entry.
+// Otherwise the fallback chain pays N x (30s provisioner sleep) before the
+// final successful entry, and a real Hetzner call would error because the
+// server is already off.
+func TestFallback_ShutdownHappensOnceWhenServerRunning(t *testing.T) {
+	api := hcloudmock.New()
+	api.MarkUnavailable("cpx31")
+	api.MarkUnavailable("cpx21")
+	srv := &hetzner.Server{
+		ID:         1,
+		Name:       "web",
+		Status:     hcloud.ServerStatusRunning,
+		ServerType: &hetzner.ServerType{Name: "cx11"},
+	}
+	api.AddServer(srv)
+
+	used, err := RescaleWithFallback(context.Background(), api, srv, "cpx31", []string{"cpx31", "cpx21", "cpx11"})
+	if err != nil {
+		t.Fatalf("RescaleWithFallback: %v", err)
+	}
+	if used != "cpx11" {
+		t.Fatalf("used = %q, want cpx11", used)
+	}
+	if got := api.ShutdownCount(); got != 1 {
+		t.Fatalf("ShutdownCount = %d, want 1 (each chain entry must not re-shutdown an already-off server)", got)
 	}
 }

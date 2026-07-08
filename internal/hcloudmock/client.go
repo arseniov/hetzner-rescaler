@@ -21,6 +21,7 @@ type Fake struct {
 	actions       map[int]*hetzner.Action
 	nextActionID  int
 	unavailable   map[string]bool
+	shutdownCount int
 
 	// errorOverrides: if a function is set, it returns its result for the
 	// corresponding (server, type) pair. Used by tests that need a custom
@@ -70,6 +71,17 @@ func (f *Fake) SetChangeTypeOverride(fn func(target *hetzner.ServerType) error) 
 	f.changeTypeOverride = fn
 }
 
+// ShutdownCount returns the number of ShutdownServer calls the fake has
+// received. Tests use it to verify that a flow didn't induce an extra
+// shutdown — e.g. when the pre-check aborts early because every
+// candidate type is out of stock, a running server should never have
+// been asked to shut down at all.
+func (f *Fake) ShutdownCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.shutdownCount
+}
+
 // ---- hetzner.API ----
 
 func (f *Fake) GetServer(_ context.Context, id int) (*hetzner.Server, error) {
@@ -93,6 +105,9 @@ func (f *Fake) ListServers(_ context.Context) ([]*hetzner.Server, error) {
 }
 
 func (f *Fake) ShutdownServer(_ context.Context, srv *hetzner.Server) (*hetzner.Action, error) {
+	f.mu.Lock()
+	f.shutdownCount++
+	f.mu.Unlock()
 	return f.startAction(srv, "shutdown")
 }
 
@@ -135,7 +150,13 @@ func (f *Fake) GetServerType(_ context.Context, name string) (*hetzner.ServerTyp
 	if !ok {
 		return nil, fmt.Errorf("hcloudmock: type %q not found", name)
 	}
-	return t, nil
+	// Return a copy so callers can't mutate the fake's internal
+	// state. Hetzner's hcloud.ServerType doesn't expose availability
+	// (the API only reports it implicitly via ChangeServerType
+	// failures), so there's nothing to surface here — the test
+	// harness asserts "unavailable" by failing ChangeServerType.
+	out := *t
+	return &out, nil
 }
 
 func (f *Fake) GetAction(_ context.Context, id int) (*hetzner.Action, error) {

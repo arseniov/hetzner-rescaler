@@ -59,6 +59,13 @@ func RescaleWithHook(ctx context.Context, api hetzner.API, srv *hetzner.Server, 
 		if err := waitAction(ctx, api, act); err != nil {
 			return fmt.Errorf("rescaler: wait shutdown: %w", err)
 		}
+		// Reflect the new state on the in-memory server struct so the
+		// fallback chain (and any caller polling this pointer) sees a
+		// consistent picture. Without this, a fallback loop would try
+		// to shut down the same already-off server again on the next
+		// iteration — paying another 30s provisioner wait and risking
+		// a "server already off" error from Hetzner.
+		srv.Status = hcloud.ServerStatusOff
 		// Wait for the Hetzner provisioner to be ready to accept a new type
 		time.Sleep(provisionerSleep)
 	}
