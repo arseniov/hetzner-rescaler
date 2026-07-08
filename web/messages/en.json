@@ -207,5 +207,17 @@
   "server_type_multiselect_add_label": "Add a fallback type",
   "server_type_multiselect_add_placeholder": "+ Add fallback type…",
   "server_type_multiselect_remove_chip": "Remove {name}",
-  "server_type_multiselect_no_addable": "No more types available."
+  "server_type_multiselect_no_addable": "No more types available.",
+  "mode_pill_manual": "Manual",
+  "mode_pill_autopromote": "Auto-promote",
+  "mode_pill_scheduled": "Scheduled",
+  "mode_pill_autopromote_ready": "Ready · Request promote to start",
+  "mode_pill_autopromote_pending": "{direction} requested · waiting for next tick",
+  "mode_pill_scheduled_next": "Next: {when} → {type}",
+  "mode_pill_scheduled_none": "No windows configured",
+  "mode_pill_last_tick_never": "Last scheduler tick: never",
+  "mode_pill_last_tick_ago": "Last scheduler tick: {ago}s ago",
+  "mode_pill_button_disabled_autopromote": "Auto-promote mode — use Request promote/demote instead",
+  "mode_pill_button_disabled_scheduled": "Scheduled mode — wait for the next window, or edit a window to force",
+  "events_filter_kind_scheduler_tick": "Scheduler ticks"
 }
