@@ -4,7 +4,7 @@
   import { serverTypes } from '$lib/stores/serverTypes.svelte';
   import { m } from '$lib/paraglide/messages.js';
   import type { Server, ServerType } from '$lib/types';
-  import { cn } from '$lib/utils';
+  import { cn, SELECT_TRIGGER_CLASSES } from '$lib/utils';
   import { roleFor, type ServerTypeRole } from '$lib/utils/serverTypeRoles';
 
   /**
@@ -110,12 +110,7 @@
     {id}
     {disabled}
     aria-label={ariaLabel}
-    class={cn(
-      'flex h-9 w-full items-center justify-between rounded-md border border-border bg-input px-3 py-1 text-sm text-foreground',
-      'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background',
-      'disabled:cursor-not-allowed disabled:opacity-50',
-      className
-    )}
+    class={cn(SELECT_TRIGGER_CLASSES, className)}
   >
     <Select.Value placeholder={placeholder ?? (required ? '' : '—')}>
       {#snippet child({ props })}

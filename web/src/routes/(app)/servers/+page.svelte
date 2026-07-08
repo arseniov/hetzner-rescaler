@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { m } from '$lib/paraglide/messages.js';
   import { api } from '$lib/api';
   import type { Server } from '$lib/types';
@@ -26,11 +26,30 @@
     return (s.status as Status) ?? 'unknown';
   }
 
-  onMount(async () => {
+  async function refresh() {
     try {
       servers = await api.listServers();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  onMount(refresh);
+
+  // 30s refresh keeps the Status column honest for an operator
+  // watching the dashboard. Same cadence as the server detail page;
+  // see the comment there for the rationale.
+  const LIVE_POLL_MS = 30_000;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  onMount(() => {
+    pollTimer = setInterval(() => {
+      refresh().catch(() => {});
+    }, LIVE_POLL_MS);
+  });
+  onDestroy(() => {
+    if (pollTimer !== null) {
+      clearInterval(pollTimer);
+      pollTimer = null;
     }
   });
 </script>

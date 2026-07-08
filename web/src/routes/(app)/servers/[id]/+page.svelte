@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/stores';
   import { ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Pencil, Calendar } from 'lucide-svelte';
   import { m } from '$lib/paraglide/messages.js';
@@ -57,6 +57,43 @@
   }
 
   onMount(refresh);
+
+  // Background poll so the live status + current_type badges track a
+  // server through shutdown / poweron cycles without requiring a
+  // manual reload. The API fetches fresh state from Hetzner per call
+  // (no server-side caching); the previous behaviour only re-fetched
+  // on mount, so a server toggled while you had the page open stayed
+  // visually "OFF" forever.
+  //
+  // 30s is a compromise between freshness and Hetzner API quota —
+  // operators on the dashboard typically aren't staring at a single
+  // server, so a half-minute cadence is responsive without hammering
+  // the upstream. The interval is paused while a rescale is in flight
+  // — `refresh()` already runs on every phase via the SSE-fed
+  // pendingRescale store, so polling would be redundant churn.
+  const LIVE_POLL_MS = 30_000;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  function startPolling() {
+    stopPolling();
+    pollTimer = setInterval(() => {
+      if (pendingEvent === undefined) refresh().catch(() => {});
+    }, LIVE_POLL_MS);
+  }
+  function stopPolling() {
+    if (pollTimer !== null) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+  // React to rescale-state transitions: pause polling while a rescale
+  // is active (events drive updates), resume once it clears so the
+  // final running/off state settles in.
+  $effect(() => {
+    if (pendingEvent === undefined) startPolling();
+    else stopPolling();
+  });
+
+  onDestroy(stopPolling);
 
   async function commitRescale() {
     busy = confirmDirection;

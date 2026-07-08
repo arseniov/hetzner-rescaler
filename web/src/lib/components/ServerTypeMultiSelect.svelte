@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
   import { X, GripVertical } from 'lucide-svelte';
   import { serverTypes } from '$lib/stores/serverTypes.svelte';
-  import { cn } from '$lib/utils';
+  import { cn, SELECT_TRIGGER_CLASSES } from '$lib/utils';
 
   /**
    * ServerTypeMultiSelect — drag-drop multiselect for the fallback
@@ -128,7 +128,7 @@
       addFromDropdown(sel.value);
       sel.value = '';
     }}
-    class="flex h-9 rounded-md border border-border bg-input px-3 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
+    class={cn(SELECT_TRIGGER_CLASSES)}
   >
     <option value="">+ Add fallback type…</option>
     {#each addableOptions as t (t.name)}
