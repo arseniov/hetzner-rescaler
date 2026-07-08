@@ -11,6 +11,8 @@
   import Tabs from '$lib/components/ui/tabs.svelte';
   import Dialog from '$lib/components/ui/dialog.svelte';
   import StatusBadge, { type Status } from '$lib/components/StatusBadge.svelte';
+  import PendingRescaleBadge from '$lib/components/PendingRescaleBadge.svelte';
+  import { pendingRescale } from '$lib/stores/pendingRescale.svelte';
 
   let server = $state<Server | null>(null);
   let events = $state<RescaleEvent[]>([]);
@@ -43,6 +45,10 @@
       server = await api.getServer(serverId);
       events = await api.serverEvents(serverId, 25);
       windows = await api.listWindows(serverId);
+      // Seed the pending store from the embedded event so the badge
+      // appears even if the SSE stream was missed during page load
+      // (e.g. rescale started before the operator opened the page).
+      pendingRescale.setFromServer(server?.pending_event);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -116,6 +122,13 @@
   function showEvents() {
     activeTab = 'events';
   }
+
+  // Live pending-rescale state. SSE pushes these into `pendingRescale`;
+  // the derived `isRescaling` drives the badge visibility and disables
+  // every action button while a rescale is in flight so the operator
+  // can't stage two rescales against the same server.
+  let pendingEvent = $derived(serverId ? pendingRescale.get(serverId) : undefined);
+  let isRescaling = $derived(pendingEvent !== undefined);
 </script>
 
 <svelte:head>
@@ -157,8 +170,13 @@
             {m.server_detail_state({ state: s.promote_state })}
           {/if}
         </p>
+        {#if pendingEvent}
+          <div class="mt-2">
+            <PendingRescaleBadge event={pendingEvent} />
+          </div>
+        {/if}
       </div>
-      <Button variant="ghost" size="sm" href="/servers/{s.id}/edit">
+      <Button variant="ghost" size="sm" href="/servers/{s.id}/edit" disabled={isRescaling}>
         <Pencil class="size-3.5" strokeWidth={1.75} aria-hidden="true" />
         {m.server_detail_edit()}
       </Button>
@@ -253,7 +271,7 @@
               <Button
                 variant="primary"
                 size="sm"
-                disabled={busy !== null}
+                disabled={busy !== null || isRescaling}
                 onclick={() => askRescale('up')}
               >
                 <ArrowUp class="size-3.5" strokeWidth={1.75} aria-hidden="true" />
@@ -262,7 +280,7 @@
               <Button
                 variant="default"
                 size="sm"
-                disabled={busy !== null}
+                disabled={busy !== null || isRescaling}
                 onclick={() => askRescale('down')}
               >
                 <ArrowDown class="size-3.5" strokeWidth={1.75} aria-hidden="true" />
@@ -272,7 +290,7 @@
                 <Button
                   variant="default"
                   size="sm"
-                  disabled={busy !== null}
+                  disabled={busy !== null || isRescaling}
                   onclick={promote}
                 >
                   <ChevronsUp class="size-3.5" strokeWidth={1.75} aria-hidden="true" />
@@ -281,7 +299,7 @@
                 <Button
                   variant="default"
                   size="sm"
-                  disabled={busy !== null}
+                  disabled={busy !== null || isRescaling}
                   onclick={demote}
                 >
                   <ChevronsDown class="size-3.5" strokeWidth={1.75} aria-hidden="true" />
@@ -297,6 +315,7 @@
                 size="icon"
                 href="/servers/{s.id}/windows"
                 aria-label={m.server_detail_edit_windows()}
+                disabled={isRescaling}
               >
                 <Calendar class="size-4" strokeWidth={1.75} aria-hidden="true" />
               </Button>
@@ -350,7 +369,7 @@
               <h2 class="font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
                 {m.server_detail_windows_count({ count: windows.length })}
               </h2>
-              <Button variant="ghost" size="sm" href="/servers/{s.id}/windows">
+              <Button variant="ghost" size="sm" href="/servers/{s.id}/windows" disabled={isRescaling}>
                 <Pencil class="size-3.5" strokeWidth={1.75} aria-hidden="true" />
                 {m.server_detail_edit()}
               </Button>
