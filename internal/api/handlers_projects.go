@@ -183,7 +183,7 @@ func (d Deps) syncProjectServers(ctx context.Context, projectID int64) ([]Server
 			continue
 		}
 		if existing, ok := existingByID[hs.ID]; ok {
-			skipped = append(skipped, serverToResponse(existing, LiveServerState{}))
+			skipped = append(skipped, serverToResponse(existing, LiveServerState{}, nil))
 			continue
 		}
 		baseName := ""
@@ -203,7 +203,7 @@ func (d Deps) syncProjectServers(ctx context.Context, projectID int64) ([]Server
 		if err != nil {
 			return added, skipped, fmt.Errorf("create server: %w", err)
 		}
-		added = append(added, serverToResponse(srv, LiveServerState{}))
+		added = append(added, serverToResponse(srv, LiveServerState{}, nil))
 	}
 
 	return added, skipped, nil

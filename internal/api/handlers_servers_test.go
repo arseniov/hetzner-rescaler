@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/hetznercloud/hcloud-go/hcloud"
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
@@ -279,5 +280,51 @@ func TestLiveServerState_SoftFailOnNilDepsAPIFor(t *testing.T) {
 	got := d.liveServerState(context.Background(), srv)
 	if got != (LiveServerState{}) {
 		t.Fatalf("expected zero LiveServerState, got %+v", got)
+	}
+}
+
+func TestGetServer_IncludesPendingEvent(t *testing.T) {
+	deps, _ := newTestDeps(t)
+	_, sid := seedServer(t, deps, "p1", "web-1")
+
+	// Insert a pending event.
+	_, err := deps.Store.AppendEvent(store.Event{
+		ServerID: sid, Kind: "rescale_pending",
+		StartedAt: time.Now().UTC(), TriggeredBy: "test",
+	})
+	if err != nil {
+		t.Fatalf("AppendEvent: %v", err)
+	}
+
+	h := NewRouter(deps)
+	req := authedRequest(t, "GET", "/api/servers/"+itoa(sid), nil)
+	rr := recorder(t, h, req)
+
+	var got ServerResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.PendingEvent == nil {
+		t.Fatal("pending_event missing from response")
+	}
+	if got.PendingEvent.Kind != "rescale_pending" {
+		t.Fatalf("pending_event.kind = %q, want rescale_pending", got.PendingEvent.Kind)
+	}
+}
+
+func TestGetServer_OmitsPendingEventWhenNone(t *testing.T) {
+	deps, _ := newTestDeps(t)
+	_, sid := seedServer(t, deps, "p1", "web-1")
+
+	h := NewRouter(deps)
+	req := authedRequest(t, "GET", "/api/servers/"+itoa(sid), nil)
+	rr := recorder(t, h, req)
+
+	var got map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := got["pending_event"]; ok {
+		t.Fatalf("pending_event should be absent, got %v", got["pending_event"])
 	}
 }

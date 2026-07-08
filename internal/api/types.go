@@ -21,7 +21,7 @@ type ProjectResponse struct {
 // Field sources:
 //   - store-backed fields: id, project_id, hcloud_server_id, name, label,
 //     base_server_type, top_server_type, fallback_chain, mode,
-//     promote_state, timezone, created_at, updated_at
+//     promote_state, timezone, created_at, updated_at, pending_event
 //   - live Hetzner state: status (running/initializing/starting/stopping/
 //     off/deleting), current_type (the live ServerType.Name as reported
 //     by Hetzner right now)
@@ -45,6 +45,10 @@ type ServerResponse struct {
 	CurrentType    string    `json:"current_type,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
+	// PendingEvent is the in-flight rescale_pending event for this server,
+	// if any. Omitted when the server is idle so the client can distinguish
+	// "no rescale" from "rescale in progress" without a follow-up GET.
+	PendingEvent *EventResponse `json:"pending_event,omitempty"`
 }
 
 // WindowResponse mirrors store.Window.

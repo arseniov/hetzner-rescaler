@@ -24,9 +24,19 @@ func (d Deps) handleListServers(w http.ResponseWriter, r *http.Request) {
 	}
 	live := liveStateMap(r.Context(), d, servers)
 
+	// Pending events are read serially per row (one indexed lookup each).
+	// Acceptable here: matches the previous inline pattern, and SQLite is
+	// already on the critical path for the rest of the request.
+	pendingMap := make(map[int64]*store.Event, len(servers))
+	for _, s := range servers {
+		if e, err := d.Store.ActivePendingEventForServer(s.ID); err == nil {
+			pendingMap[s.ID] = e
+		}
+	}
+
 	out := make([]ServerResponse, 0, len(servers))
 	for _, s := range servers {
-		out = append(out, serverToResponse(s, live[s.ID]))
+		out = append(out, serverToResponse(s, live[s.ID], pendingMap[s.ID]))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -47,7 +57,8 @@ func (d Deps) handleGetServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	live := d.liveServerState(r.Context(), srv)
-	writeJSON(w, http.StatusOK, serverToResponse(srv, live))
+	pending, _ := d.Store.ActivePendingEventForServer(srv.ID)
+	writeJSON(w, http.StatusOK, serverToResponse(srv, live, pending))
 }
 
 func (d Deps) handleCreateServer(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +96,7 @@ func (d Deps) handleCreateServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	live := d.liveServerState(r.Context(), srv)
-	writeJSON(w, http.StatusCreated, serverToResponse(srv, live))
+	writeJSON(w, http.StatusCreated, serverToResponse(srv, live, nil))
 }
 
 func (d Deps) handleUpdateServer(w http.ResponseWriter, r *http.Request) {
@@ -125,7 +136,7 @@ func (d Deps) handleUpdateServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	live := d.liveServerState(r.Context(), existing)
-	writeJSON(w, http.StatusOK, serverToResponse(existing, live))
+	writeJSON(w, http.StatusOK, serverToResponse(existing, live, nil))
 }
 
 func (d Deps) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
@@ -202,11 +213,12 @@ func liveStateMap(ctx context.Context, d Deps, servers []*store.Server) map[int6
 // merging in the live Hetzner state when present. A zero LiveServerState
 // produces omitempty-absent fields, so callers that skip the live
 // fetch (or hit a Hetzner failure) still get a well-formed JSON body.
-func serverToResponse(s *store.Server, live LiveServerState) ServerResponse {
+// A nil pending leaves pending_event absent from the response.
+func serverToResponse(s *store.Server, live LiveServerState, pending *store.Event) ServerResponse {
 	if s == nil {
 		return ServerResponse{}
 	}
-	return ServerResponse{
+	resp := ServerResponse{
 		ID:             s.ID,
 		ProjectID:      s.ProjectID,
 		HCloudServerID: s.HCloudServerID,
@@ -223,4 +235,9 @@ func serverToResponse(s *store.Server, live LiveServerState) ServerResponse {
 		CreatedAt:      s.CreatedAt,
 		UpdatedAt:      s.UpdatedAt,
 	}
+	if pending != nil {
+		pe := eventToResponse(pending)
+		resp.PendingEvent = &pe
+	}
+	return resp
 }
