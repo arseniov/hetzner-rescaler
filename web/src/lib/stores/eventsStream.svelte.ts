@@ -1,6 +1,7 @@
 import { browser } from '$app/environment';
 import { env } from '$env/dynamic/public';
 import type { RescaleEvent } from '$lib/types';
+import { pendingRescale } from './pendingRescale.svelte';
 
 const MAX_EVENTS = 100;
 const INITIAL_BACKOFF_MS = 1000;
@@ -31,6 +32,28 @@ class EventsStreamStore {
         const data = JSON.parse(e.data) as RescaleEvent | { ok?: boolean };
         if ('id' in data && typeof data.id === 'number') {
           this.events = [data as RescaleEvent, ...this.events].slice(0, MAX_EVENTS);
+          // Terminal rescale events clear the in-flight pending state
+          // for the affected server — the page's badge disappears
+          // without a manual refresh.
+          const ev = data as RescaleEvent;
+          if (ev.kind === 'rescale_completed' || ev.kind === 'rescale_failed') {
+            pendingRescale.clear(ev.server_id);
+          }
+        }
+      } catch {
+        /* ignore malformed messages */
+      }
+    });
+    // The `rescale_pending` event name rides phase updates: the
+    // Manager broadcasts a fresh rescale_pending row at each phase
+    // boundary. We forward to the pendingRescale store, which is
+    // keyed by server_id (id is the row id but the map key is the
+    // server). The badge component reads from the store via $derived.
+    this.es.addEventListener('rescale_pending', (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as RescaleEvent;
+        if (typeof data.id === 'number' && data.kind === 'rescale_pending') {
+          pendingRescale.upsert(data);
         }
       } catch {
         /* ignore malformed messages */
