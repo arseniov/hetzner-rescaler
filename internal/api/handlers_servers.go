@@ -69,7 +69,7 @@ func (d Deps) handleCreateServer(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ProjectID == 0 || req.HCloudServerID == 0 || req.Name == "" ||
 		req.BaseServerType == "" || req.TopServerType == "" ||
-		len(req.FallbackChain) == 0 || req.Mode == "" || req.Timezone == "" {
+		req.Mode == "" || req.Timezone == "" {
 		writeJSONError(w, http.StatusBadRequest, "missing required fields")
 		return
 	}
@@ -111,7 +111,7 @@ func (d Deps) handleUpdateServer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Name == "" || req.BaseServerType == "" || req.TopServerType == "" ||
-		len(req.FallbackChain) == 0 || req.Mode == "" || req.Timezone == "" {
+		req.Mode == "" || req.Timezone == "" {
 		writeJSONError(w, http.StatusBadRequest, "missing required fields")
 		return
 	}
