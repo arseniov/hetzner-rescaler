@@ -5,6 +5,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"log"
 	"sync"
 	"time"
@@ -12,6 +13,21 @@ import (
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 	"github.com/jonamat/hetzner-rescaler/internal/rescaler"
 	"github.com/jonamat/hetzner-rescaler/internal/store"
+)
+
+// tickDebounce is the minimum interval between scheduler_tick events for the
+// same server. Heartbeat events keep the operator's "last tick: Ns ago"
+// staleness signal fresh without flooding the events feed.
+const tickDebounce = 5 * time.Minute
+
+// tickReasons is the closed vocabulary of scheduler_tick error fields. The
+// UI maps these to human labels; tests assert exact equality.
+const (
+	tickReasonOKIdle         = "ok_idle"
+	tickReasonNoWindows      = "no_windows"
+	tickReasonAPIError       = "api_error"
+	tickReasonLockContention = "lock_contention"
+	tickReasonAtTarget       = "already_at_target"
 )
 
 // Scheduler holds the running goroutines for all registered servers.
@@ -117,6 +133,10 @@ func (s *Scheduler) tickScheduled(srv *store.Server, api hetzner.API) {
 		s.log.Printf("server %d: list windows: %v", srv.ID, err)
 		return
 	}
+	if len(wins) == 0 {
+		s.writeTickSummary(srv, tickReasonNoWindows)
+		return
+	}
 	plain := make([]store.Window, 0, len(wins))
 	for _, w := range wins {
 		plain = append(plain, *w)
@@ -127,15 +147,18 @@ func (s *Scheduler) tickScheduled(srv *store.Server, api hetzner.API) {
 		return
 	}
 	if !inWindow || target == "" {
+		s.writeTickSummary(srv, tickReasonOKIdle)
 		return
 	}
 
 	current, err := fetchCurrentType(context.Background(), api, srv)
 	if err != nil {
 		s.log.Printf("server %d: fetch current: %v", srv.ID, err)
+		s.writeTickSummary(srv, tickReasonAPIError)
 		return
 	}
 	if current == target {
+		s.writeTickSummary(srv, tickReasonAtTarget)
 		return
 	}
 	s.dispatch(srv, api, target, "scheduler")
@@ -148,17 +171,56 @@ func (s *Scheduler) tickAutoPromote(srv *store.Server, api hetzner.API) {
 	current, err := fetchCurrentType(context.Background(), api, srv)
 	if err != nil {
 		s.log.Printf("server %d: fetch current: %v", srv.ID, err)
+		s.writeTickSummary(srv, tickReasonAPIError)
 		return
 	}
 	switch *srv.PromoteState {
 	case "promote_requested":
 		if current == srv.BaseServerType {
 			s.dispatch(srv, api, srv.TopServerType, "auto_promote")
+			return
 		}
+		// Gate unmet — surface it. (current == top means we're already where
+		// the operator asked; current elsewhere means we're between states.)
+		s.writeTickSummary(srv, tickReasonOKIdle)
 	case "demote_requested":
 		if current == srv.TopServerType {
 			s.dispatch(srv, api, srv.BaseServerType, "manual")
+			return
 		}
+		s.writeTickSummary(srv, tickReasonOKIdle)
+	}
+}
+
+// writeTickSummary persists a scheduler_tick event for srv unless one was
+// written within the last tickDebounce. The event's Error field carries a
+// small closed-vocabulary reason — see the tickReason* constants.
+//
+// No-op if reason is empty (the caller has nothing to surface to the
+// operator).
+func (s *Scheduler) writeTickSummary(srv *store.Server, reason string) {
+	if reason == "" {
+		return
+	}
+	last, err := s.store.LastEventOfKind(srv.ID, "scheduler_tick")
+	if err != nil {
+		s.log.Printf("server %d: read last tick: %v", srv.ID, err)
+		return
+	}
+	if last.ID != 0 && s.clock.Now().UTC().Sub(last.StartedAt) < tickDebounce {
+		return
+	}
+	now := s.clock.Now().UTC()
+	if _, err := s.store.AppendEvent(store.Event{
+		ServerID:    srv.ID,
+		Kind:        "scheduler_tick",
+		StartedAt:   now,
+		FinishedAt:  now,
+		OK:          true,
+		TriggeredBy: "scheduler",
+		Error:       reason,
+	}); err != nil {
+		s.log.Printf("server %d: write scheduler_tick (%s): %v", srv.ID, reason, err)
 	}
 }
 
@@ -180,10 +242,14 @@ func (s *Scheduler) dispatch(srv *store.Server, api hetzner.API, target, trigger
 	acquired, err := s.store.AcquireAction(srv.ID, "rescale_to_"+target, 30*time.Minute)
 	if err != nil {
 		s.log.Printf("server %d: acquire action: %v", srv.ID, err)
+		if errors.Is(err, store.ErrLocked) {
+			s.writeTickSummary(srv, tickReasonLockContention)
+		}
 		return
 	}
 	if !acquired {
 		s.log.Printf("server %d: another action in flight, skipping", srv.ID)
+		s.writeTickSummary(srv, tickReasonLockContention)
 		return
 	}
 	defer s.store.ReleaseAction(srv.ID)
