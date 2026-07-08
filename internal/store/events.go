@@ -219,6 +219,30 @@ func (s *Store) ListEventsInRange(from, to time.Time) ([]*Event, error) {
 	return scanEvents(rows)
 }
 
+// LastEventOfKind returns the most recent Event with the given kind for the
+// server, or a zero-value Event with err == nil if no such event exists.
+// Used by the scheduler to debounce scheduler_tick heartbeat writes.
+func (s *Store) LastEventOfKind(serverID int64, kind string) (Event, error) {
+	rows, err := s.db.Query(
+		`SELECT `+eventColumns+` FROM events
+		 WHERE server_id = ? AND kind = ?
+		 ORDER BY id DESC LIMIT 1`,
+		serverID, kind,
+	)
+	if err != nil {
+		return Event{}, fmt.Errorf("store: last event of kind: %w", err)
+	}
+	defer rows.Close()
+	out, err := scanEvents(rows)
+	if err != nil {
+		return Event{}, err
+	}
+	if len(out) == 0 {
+		return Event{}, nil
+	}
+	return *out[0], nil
+}
+
 const eventColumns = `id, server_id, kind, from_type, to_type, phase, started_at, finished_at, ok, error, triggered_by`
 
 func scanEvents(rows *sql.Rows) ([]*Event, error) {
