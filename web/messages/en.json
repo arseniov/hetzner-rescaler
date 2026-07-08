@@ -190,5 +190,16 @@
   "servers_status_col_window": "Active window",
   "servers_status_col_status": "Status",
   "server_type_select_loading": "Loading server types…",
-  "server_type_select_unavailable": "Server types unavailable — check the Hetzner token"
+  "server_type_select_unavailable": "Server types unavailable — check the Hetzner token",
+  "pending_rescale_phase_shutting_down": "Shutting down…",
+  "pending_rescale_phase_changing_type": "Changing server type…",
+  "pending_rescale_phase_powering_on": "Powering on…",
+  "pending_rescale_phase_done": "Done",
+  "pending_rescale_unknown_phase": "Working…",
+  "pending_rescale_elapsed_seconds": "{seconds}s",
+  "pending_rescale_elapsed_minutes": "{minutes}m {seconds}s",
+  "server_type_role_current": "CURRENT",
+  "server_type_role_base": "BASE",
+  "server_type_role_top": "TOP",
+  "server_type_role_fallback": "FALLBACK"
 }
