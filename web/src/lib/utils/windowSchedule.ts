@@ -25,6 +25,77 @@ export type WindowState =
 
 const MINUTES_PER_DAY = 24 * 60;
 
+// ---------------------------------------------------------------------------
+// Intl.DateTimeFormat caches.
+//
+// These helpers used to construct a fresh Intl.DateTimeFormat on every call.
+// nextWindow walks forward in 1-minute steps up to 7 days (10,080 iterations)
+// and calls several of these helpers per iteration — building formatters
+// inside the loop body is ~30k Intl allocations per nextWindow invocation.
+// The formatters are cached per-timezone at module scope and reused.
+// ---------------------------------------------------------------------------
+
+const weekdayFmtCache = new Map<string, Intl.DateTimeFormat>();
+function weekdayFmt(timezone: string): Intl.DateTimeFormat {
+  let f = weekdayFmtCache.get(timezone);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      weekday: 'short',
+    });
+    weekdayFmtCache.set(timezone, f);
+  }
+  return f;
+}
+
+const hmFmtCache = new Map<string, Intl.DateTimeFormat>();
+function hmFmt(timezone: string): Intl.DateTimeFormat {
+  let f = hmFmtCache.get(timezone);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    hmFmtCache.set(timezone, f);
+  }
+  return f;
+}
+
+const ymdFmtCache = new Map<string, Intl.DateTimeFormat>();
+function ymdFmt(timezone: string): Intl.DateTimeFormat {
+  let f = ymdFmtCache.get(timezone);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    ymdFmtCache.set(timezone, f);
+  }
+  return f;
+}
+
+const ymdhmFmtCache = new Map<string, Intl.DateTimeFormat>();
+function ymdhmFmt(timezone: string): Intl.DateTimeFormat {
+  let f = ymdhmFmtCache.get(timezone);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    ymdhmFmtCache.set(timezone, f);
+  }
+  return f;
+}
+
 /** Parse 'HH:MM' into { hour, minute }. */
 function parseHHMM(hhmm: string): { hour: number; minute: number } | null {
   const m = /^(\d{2}):(\d{2})$/.exec(hhmm);
@@ -38,22 +109,14 @@ function parseHHMM(hhmm: string): { hour: number; minute: number } | null {
 
 /** Bit 0 = Sunday ... bit 6 = Saturday. */
 function dayBit(date: Date, timezone: string): number {
-  const weekday = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    weekday: 'short',
-  }).format(date);
+  const weekday = weekdayFmt(timezone).format(date);
   const order = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   return order.indexOf(weekday); // -1 if unknown
 }
 
 /** Minutes-since-00:00 in the timezone of `date`. */
 function minutesInTz(date: Date, timezone: string): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date);
+  const parts = hmFmt(timezone).format(date);
   // '24' can appear at midnight in some locales; normalise.
   const [hh, mm] = parts.split(':').map((s) => parseInt(s, 10));
   return (hh === 24 ? 0 : hh) * 60 + mm;
@@ -61,12 +124,7 @@ function minutesInTz(date: Date, timezone: string): number {
 
 /** Get the year/month/day components of `date` in `timezone`. */
 function datePartsInTz(date: Date, timezone: string): { year: number; month: number; day: number } {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date);
+  const parts = ymdFmt(timezone).formatToParts(date);
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
   return {
     year: parseInt(get('year'), 10),
@@ -86,15 +144,7 @@ function wallToUtc(
 ): Date {
   // Build a UTC instant that *would* be the wall time if the timezone were UTC.
   const naiveUtc = Date.UTC(year, month - 1, day, hour, minute);
-  const fmt = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
+  const fmt = ymdhmFmt(timezone);
   // Try offsets in 15-minute increments from -14h to +14h.
   // Walk in order of ascending absolute offset so the smallest-offset match wins.
   const offsets: number[] = [];
@@ -126,7 +176,21 @@ function wallToUtc(
 }
 
 /** Compute the in-window range for a window on the wall-day that contains `now` in `timezone`.
- * Returns null if the window doesn't cover `now`. */
+ * Returns null if the window doesn't cover `now`.
+ *
+ * Two window shapes:
+ *   - Same-day:    stop > start. Active iff today is in the day mask AND
+ *                  start <= cur < stop.
+ *   - Wrap-around: stop <= start. The window starts on the "start day" at
+ *                  `start_time` and ends on the *next* day at `stop_time`.
+ *                  That next day is what we call the "stop day". `now` can
+ *                  fall on either side of midnight:
+ *     - Start-day side: today is in mask, cur >= start. Window ends at
+ *                       stop_time tomorrow.
+ *     - Stop-day side:  yesterday is in mask, cur < stop. Window started
+ *                       at start_time yesterday and ends at stop_time today.
+ *
+ * Returns null if neither branch matches. */
 function inWindowRange(
   now: Date,
   timezone: string,
@@ -141,24 +205,65 @@ function inWindowRange(
   const stopMin = stop.hour * 60 + stop.minute;
 
   const todayBit = dayBit(now, timezone);
-  if (todayBit < 0 || (w.days_of_week & (1 << todayBit)) === 0) {
-    return null;
+  if (todayBit < 0) return null;
+
+  // Same-day branch: today is in the mask AND cur is in [start, stop).
+  if (
+    (w.days_of_week & (1 << todayBit)) !== 0 &&
+    stopMin > startMin &&
+    cur >= startMin &&
+    cur < stopMin
+  ) {
+    const today = datePartsInTz(now, timezone);
+    return {
+      startedAt: wallToUtc(today.year, today.month, today.day, start.hour, start.minute, timezone),
+      endsAt: wallToUtc(today.year, today.month, today.day, stop.hour, stop.minute, timezone),
+      target: w.target_type,
+    };
   }
 
-  const today = datePartsInTz(now, timezone);
-  const startUtc = wallToUtc(today.year, today.month, today.day, start.hour, start.minute, timezone);
-  const stopUtc = stopMin > startMin
-    ? wallToUtc(today.year, today.month, today.day, stop.hour, stop.minute, timezone)
-    : wallToUtc(today.year, today.month, today.day + 1, stop.hour, stop.minute, timezone);
+  // Wrap-around branch: stop day is the day after start day.
+  // Walk back a full 24h to derive yesterday's wall-day in the timezone —
+  // a 24h subtraction in UTC is exact for this purpose because we're
+  // moving by exactly one wall-clock day in any IANA zone.
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const yesterdayBit = dayBit(yesterday, timezone);
+  if (yesterdayBit < 0) return null;
 
-  // Same-day: start <= cur < stop
-  if (stopMin > startMin && cur >= startMin && cur < stopMin) {
-    return { startedAt: startUtc, endsAt: stopUtc, target: w.target_type };
+  const isWrap = stopMin <= startMin;
+
+  // Start-day side of a wrap window: today in mask, cur >= startMin. Window
+  // runs from today's start_time through tomorrow's stop_time.
+  if (
+    isWrap &&
+    (w.days_of_week & (1 << todayBit)) !== 0 &&
+    cur >= startMin &&
+    cur < MINUTES_PER_DAY
+  ) {
+    const today = datePartsInTz(now, timezone);
+    return {
+      startedAt: wallToUtc(today.year, today.month, today.day, start.hour, start.minute, timezone),
+      endsAt: wallToUtc(today.year, today.month, today.day + 1, stop.hour, stop.minute, timezone),
+      target: w.target_type,
+    };
   }
-  // Wrap-around window (stop <= start), we're on the start day: cur >= startMin.
-  if (stopMin <= startMin && cur >= startMin && cur < MINUTES_PER_DAY) {
-    return { startedAt: startUtc, endsAt: stopUtc, target: w.target_type };
+
+  // Stop-day side of a wrap window: yesterday in mask, cur < stopMin.
+  // Window started yesterday at start_time and ends today at stop_time.
+  if (
+    isWrap &&
+    (w.days_of_week & (1 << yesterdayBit)) !== 0 &&
+    cur < stopMin
+  ) {
+    const yday = datePartsInTz(yesterday, timezone);
+    const today = datePartsInTz(now, timezone);
+    return {
+      startedAt: wallToUtc(yday.year, yday.month, yday.day, start.hour, start.minute, timezone),
+      endsAt: wallToUtc(today.year, today.month, today.day, stop.hour, stop.minute, timezone),
+      target: w.target_type,
+    };
   }
+
   return null;
 }
 

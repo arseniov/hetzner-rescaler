@@ -87,4 +87,22 @@ describe('nextWindow', () => {
     expect(out.target).toBe('cpx21'); // narrower window wins for in_window report
     expect(out.endsAt.toISOString()).toBe('2026-07-08T17:00:00.000Z');
   });
+
+  it('detects in-window for wrap-around windows in the stop-day tail', () => {
+    // Window runs 22:00 -> 06:00 next morning, every day.
+    // At 03:00 UTC on a Tuesday morning, the window that started Monday
+    // 22:00 is still active. The day bit check must consider yesterday.
+    const out = nextWindow(
+      [win(0b1111111, '22:00', '06:00', 'cpx31')],
+      'UTC',
+      new Date('2026-07-07T03:00:00Z') // Tuesday 03:00 UTC
+    );
+    expect(out.kind).toBe('in_window');
+    if (out.kind !== 'in_window') return;
+    expect(out.target).toBe('cpx31');
+    // The window ends at 06:00 UTC on the same day (Tuesday 06:00).
+    expect(out.endsAt.toISOString()).toBe('2026-07-07T06:00:00.000Z');
+    // And it started at 22:00 UTC on the previous day (Monday 22:00).
+    expect(out.startedAt.toISOString()).toBe('2026-07-06T22:00:00.000Z');
+  });
 });
