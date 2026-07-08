@@ -27,6 +27,12 @@ export interface Server {
   current_type?: string;
   created_at?: string;
   updated_at?: string;
+  // In-flight rescale_pending event, if any. Mirrors the
+  // rescale_pending row in the events table — present only while a
+  // rescale is running. The server detail page hydrates from this on
+  // mount (survives a hard refresh) and then keeps it fresh via the
+  // pendingRescale store fed by SSE.
+  pending_event?: RescaleEvent;
 }
 
 export interface Window_ {
@@ -46,6 +52,11 @@ export interface RescaleEvent {
   kind: string;
   from_type?: string;
   to_type?: string;
+  // Current phase of the rescale. Set on rescale_pending rows
+  // (`shutting_down`, `changing_type`, `powering_on`); undefined on
+  // terminal rows (rescale_completed / rescale_failed). The server
+  // detail badge uses this to label the live state.
+  phase?: string;
   started_at: string;
   finished_at: string;
   ok: boolean;
