@@ -202,15 +202,15 @@ func (s *Scheduler) writeTickSummary(srv *store.Server, reason string) {
 	if reason == "" {
 		return
 	}
+	now := s.clock.Now().UTC()
 	last, err := s.store.LastEventOfKind(srv.ID, "scheduler_tick")
 	if err != nil {
 		s.log.Printf("server %d: read last tick: %v", srv.ID, err)
 		return
 	}
-	if last.ID != 0 && s.clock.Now().UTC().Sub(last.StartedAt) < tickDebounce {
+	if last.ID != 0 && now.Sub(last.StartedAt) < tickDebounce {
 		return
 	}
-	now := s.clock.Now().UTC()
 	if _, err := s.store.AppendEvent(store.Event{
 		ServerID:    srv.ID,
 		Kind:        "scheduler_tick",
