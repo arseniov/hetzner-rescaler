@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -46,34 +45,36 @@ func userHomeDir() string {
 	return home
 }
 
+// loadOrGenerateKey reads the AES-GCM encryption key used to seal Hetzner
+// tokens at rest in the SQLite store.
+//
+// RESCALER_TOKEN_ENCRYPTION_KEY is REQUIRED. We deliberately do not
+// auto-generate and persist a key (the previous behaviour) because that
+// path is silent: an operator who rebuilds the Docker image without
+// setting the env var gets a fresh key, then every previously-stored
+// token fails to decrypt with `message authentication failed` (a GCM
+// authentication tag mismatch). Failing loudly at startup is the only
+// way to surface that mistake before any HTTP traffic hits the API.
+//
+// To generate a key:
+//   openssl rand -hex 32
+// then store the 64-char hex string in the env var.
 func loadOrGenerateKey() ([]byte, error) {
-	if envKey := os.Getenv("RESCALER_TOKEN_ENCRYPTION_KEY"); envKey != "" {
-		if len(envKey) != 64 { // hex-encoded 32 bytes
-			return nil, fmt.Errorf("RESCALER_TOKEN_ENCRYPTION_KEY must be 64 hex chars (32 bytes); got %d", len(envKey))
-		}
-		key, err := hex.DecodeString(envKey)
-		if err != nil {
-			return nil, fmt.Errorf("RESCALER_TOKEN_ENCRYPTION_KEY is not valid hex: %w", err)
-		}
-		return key, nil
+	envKey := os.Getenv("RESCALER_TOKEN_ENCRYPTION_KEY")
+	if envKey == "" {
+		return nil, fmt.Errorf(
+			"RESCALER_TOKEN_ENCRYPTION_KEY is required; generate one with `openssl rand -hex 32` " +
+				"and set it in the environment before running any command that touches tokens " +
+				"(serve, config, start, try, migrate). Without a stable key, tokens already " +
+				"encrypted into the SQLite store become unreadable on the next process restart.",
+		)
 	}
-	dir := filepath.Join(userHomeDir(), ".hetzner-rescaler")
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return nil, err
+	if len(envKey) != 64 { // hex-encoded 32 bytes
+		return nil, fmt.Errorf("RESCALER_TOKEN_ENCRYPTION_KEY must be 64 hex chars (32 bytes); got %d", len(envKey))
 	}
-	keyPath := filepath.Join(dir, "key")
-	if data, err := os.ReadFile(keyPath); err == nil {
-		if len(data) != 32 {
-			return nil, fmt.Errorf("key file %s has wrong size: %d", keyPath, len(data))
-		}
-		return data, nil
-	}
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(keyPath, key, 0600); err != nil {
-		return nil, err
+	key, err := hex.DecodeString(envKey)
+	if err != nil {
+		return nil, fmt.Errorf("RESCALER_TOKEN_ENCRYPTION_KEY is not valid hex: %w", err)
 	}
 	return key, nil
 }

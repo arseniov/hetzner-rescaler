@@ -188,8 +188,12 @@ the dashboard the moment the scheduler commits it.
 
 Generated config and rescale history live in a single SQLite file;
 Hetzner API tokens are sealed with AES-256-GCM using
-`RESCALER_TOKEN_ENCRYPTION_KEY` (auto-generated on first run if blank
-and written to `/data/key` with mode `0600`).
+`RESCALER_TOKEN_ENCRYPTION_KEY`. The key is **required** — there is no
+auto-generated fallback. A fresh container without the env var refuses
+to start; this is intentional, because silently minting a new key on
+image rebuild would lock out previously-stored tokens (GCM auth tag
+mismatch). Generate one with `openssl rand -hex 32` and persist it
+alongside your database backups.
 
 ### Multi-project architecture
 
@@ -217,7 +221,7 @@ All configuration is via environment variables. The bundled
 | Variable                       | Required            | Purpose                                                  |
 | ------------------------------ | ------------------- | -------------------------------------------------------- |
 | `RESCALER_INTERNAL_TOKEN`      | for `serve`         | Shared secret between SPA and Go API (`X-Internal-Token`). Baked into the SPA at build time. |
-| `RESCALER_TOKEN_ENCRYPTION_KEY`| recommended         | Hex-encoded 32-byte AES-GCM key for project tokens. Blank → auto-generate. |
+| `RESCALER_TOKEN_ENCRYPTION_KEY`| **required**        | Hex-encoded 32-byte AES-GCM key (64 hex chars). Generate with `openssl rand -hex 32`. Without it the API refuses to start. |
 | `RESCALER_HTTP_ADDR`           | for `serve`         | Listen address for the API (default `0.0.0.0:8080`).     |
 | `RESCALER_DB_PATH`             | recommended         | SQLite path (default `./db.sqlite`, `/data/db.sqlite` in Docker). |
 | `BETTER_AUTH_SECRET`           | for `serve`         | Signs Better Auth session tokens; ≥ 32 chars.            |
@@ -236,7 +240,7 @@ unrecoverable.
 | Component | Local dev                | Docker                          |
 | --------- | ------------------------ | ------------------------------- |
 | DB        | `~/.hetzner-rescaler/db.sqlite` (or `$RESCALER_DB_PATH`) | `/data/db.sqlite` |
-| Key       | `~/.hetzner-rescaler/key` (or `$RESCALER_TOKEN_ENCRYPTION_KEY` env) | `/data/key` |
+| Key       | `$RESCALER_TOKEN_ENCRYPTION_KEY` env (no on-disk fallback anymore) | `$RESCALER_TOKEN_ENCRYPTION_KEY` env |
 
 Back up the entire `/data/` volume.
 

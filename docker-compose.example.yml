@@ -26,7 +26,11 @@ services:
       - "8080"
     environment:
       RESCALER_INTERNAL_TOKEN: ${RESCALER_INTERNAL_TOKEN:?set this}
-      RESCALER_TOKEN_ENCRYPTION_KEY: ${RESCALER_TOKEN_ENCRYPTION_KEY:-}
+      # Required. Generate with `openssl rand -hex 32` and paste the
+      # 64-char hex string into .env as RESCALER_TOKEN_ENCRYPTION_KEY=...
+      # Without it the API container refuses to start (gated by loadOrGenerateKey),
+      # so a fresh image can't wipe out access to previously-stored Hetzner tokens.
+      RESCALER_TOKEN_ENCRYPTION_KEY: ${RESCALER_TOKEN_ENCRYPTION_KEY:?RESCALER_TOKEN_ENCRYPTION_KEY must be set (generate with 'openssl rand -hex 32')}
       RESCALER_HTTP_ADDR: "0.0.0.0:8080"
     volumes:
       - rescaler_data:/data
