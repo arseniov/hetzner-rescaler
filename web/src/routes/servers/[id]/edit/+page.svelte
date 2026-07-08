@@ -10,20 +10,21 @@
   import Label from '$lib/components/ui/label.svelte';
   import Alert from '$lib/components/ui/alert.svelte';
   import ServerTypeSelect from '$lib/components/ServerTypeSelect.svelte';
+  import ServerTypeMultiSelect from '$lib/components/ServerTypeMultiSelect.svelte';
 
   let server = $state<Server | null>(null);
   let error = $state<string | null>(null);
   let saving = $state(false);
 
   // Local form state (mirrors the loaded server, with two-way bindings).
-  // Fallback chain is stored as a CSV string for input ergonomics;
-  // split on submit.
+  // Fallback chain is an ordered string[] — bound directly to the
+  // drag-drop ServerTypeMultiSelect, no CSV conversion needed.
   let form = $state({
     name: '',
     label: '',
     base_server_type: '',
     top_server_type: '',
-    fallback_chain_csv: '',
+    fallback_chain: [] as string[],
     mode: 'manual' as Server['mode'],
     timezone: 'UTC'
   });
@@ -38,7 +39,7 @@
         label: server.label,
         base_server_type: server.base_server_type,
         top_server_type: server.top_server_type,
-        fallback_chain_csv: server.fallback_chain.join(','),
+        fallback_chain: [...server.fallback_chain],
         mode: server.mode,
         timezone: server.timezone
       };
@@ -52,16 +53,12 @@
     saving = true;
     error = null;
     try {
-      const chain = form.fallback_chain_csv
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
       const updated = await api.updateServer(serverId, {
         name: form.name.trim(),
         label: form.label.trim(),
         base_server_type: form.base_server_type.trim(),
         top_server_type: form.top_server_type.trim(),
-        fallback_chain: chain,
+        fallback_chain: form.fallback_chain,
         mode: form.mode,
         timezone: form.timezone.trim()
       });
@@ -109,9 +106,11 @@
 
     <!--
       Base / top type are now ServerTypeSelect dropdowns (driven by
-      /api/server-types) instead of free-text inputs. The fallback
-      chain stays CSV because the design vocabulary deliberately
-      prefers copy/paste from documentation over a chip combobox.
+      /api/server-types) with role chips. The fallback chain is a
+      drag-drop ServerTypeMultiSelect — chips can be reordered by
+      pointer or touch. Base and top are excluded from the add list
+      because a fallback that's the same as base or top is a config
+      contradiction.
     -->
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <div class="flex flex-col gap-1.5">
@@ -126,11 +125,10 @@
 
     <div class="flex flex-col gap-1.5">
       <Label for="f-chain">{m.server_edit_field_fallback()}</Label>
-      <Input
+      <ServerTypeMultiSelect
         id="f-chain"
-        bind:value={form.fallback_chain_csv}
-        required
-        placeholder={m.server_edit_field_fallback_placeholder()}
+        bind:value={form.fallback_chain}
+        excluded={[form.base_server_type, form.top_server_type].filter(Boolean)}
       />
     </div>
 

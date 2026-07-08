@@ -12,6 +12,7 @@
   import Dialog from '$lib/components/ui/dialog.svelte';
   import ServerCard from '$lib/components/ServerCard.svelte';
   import ServerTypeSelect from '$lib/components/ServerTypeSelect.svelte';
+  import ServerTypeMultiSelect from '$lib/components/ServerTypeMultiSelect.svelte';
 
   let project = $state<Project | null>(null);
   let servers = $state<Server[]>([]);
@@ -29,7 +30,7 @@
   let newName = $state('');
   let newBase = $state('');
   let newTop = $state('');
-  let newFallbackCsv = $state('');
+  let newFallback = $state<string[]>([]);
   let registering = $state(false);
   let registerError = $state<string | null>(null);
 
@@ -38,7 +39,7 @@
     newName = '';
     newBase = '';
     newTop = '';
-    newFallbackCsv = '';
+    newFallback = [];
     registerError = null;
   }
 
@@ -78,10 +79,6 @@
     registerError = null;
     registering = true;
     try {
-      const chain = newFallbackCsv
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
       await api.createServer({
         project_id: projectId,
         hcloud_server_id: Number(newHcloudId),
@@ -93,7 +90,7 @@
         // can never rescale.
         base_server_type: newBase,
         top_server_type: newTop,
-        fallback_chain: chain,
+        fallback_chain: newFallback,
         mode: 'manual',
         timezone: 'UTC'
       });
@@ -240,10 +237,10 @@
       </div>
       <div class="flex flex-col gap-1.5">
         <Label for="reg-fallback">{m.project_detail_field_fallback()}</Label>
-        <Input
+        <ServerTypeMultiSelect
           id="reg-fallback"
-          bind:value={newFallbackCsv}
-          placeholder="cpx31,cpx21"
+          bind:value={newFallback}
+          excluded={[newBase, newTop].filter(Boolean)}
         />
       </div>
     </div>
