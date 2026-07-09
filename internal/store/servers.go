@@ -42,6 +42,16 @@ type Window struct {
 	Enabled    bool
 }
 
+// ServerLifecycleEvent is broadcast on the store's lifecycle hub after
+// every successful CreateServer, UpdateServer, or DeleteServer. Subscribers
+// (e.g., the in-process scheduler) use it to add or remove per-server work.
+//
+// Kind is one of: "created", "updated", "deleted".
+type ServerLifecycleEvent struct {
+	Kind     string
+	ServerID int64
+}
+
 func (s *Store) CreateServer(projectID int64, srv Server) (*Server, error) {
 	chain, err := json.Marshal(srv.FallbackChain)
 	if err != nil {
