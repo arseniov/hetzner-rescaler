@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"testing"
 	"time"
@@ -191,7 +192,13 @@ func TestPricingMap_PopulatesFromLiveTypes(t *testing.T) {
 	}
 
 	pm := deps.pricingMap(context.Background(), "fsn1")
-	if pm["cx11"] <= 0 {
-		t.Fatalf("cx11 price = %v, want >0", pm["cx11"])
+	// Assert the value matches the stub's live value, not just "> 0".
+	// fixedPricingMap() already has cx11 at 3.29, so a > 0 assertion would
+	// pass even if the live path were broken and the fallback map were
+	// returned. 3.89 vs 3.29 proves the live lookup ran. We compare with
+	// tolerance because float32→float64 round-tripping adds noise.
+	got := pm["cx11"]
+	if math.Abs(got-3.89) > 1e-3 {
+		t.Fatalf("cx11 price = %v, want 3.89 (live stub value, not fixedPricingMap fallback 3.29)", got)
 	}
 }
