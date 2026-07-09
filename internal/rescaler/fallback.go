@@ -31,9 +31,10 @@ var ErrAllUnavailable = errors.New("rescaler: all fallback targets unavailable")
 //
 // This is the no-event-emission wrapper used by cmd/try.go. The scheduler
 // and any future caller that wants rescale_skipped events in the store
-// should call RescaleWithFallbackWithHook directly with a non-nil store.
+// should call RescaleWithFallbackWithHook directly with a non-nil store
+// and a valid local serverID.
 func RescaleWithFallback(ctx context.Context, api hetzner.API, srv *hetzner.Server, targetType string, chain []string) (string, error) {
-	return RescaleWithFallbackWithHook(ctx, api, srv, targetType, chain, nil, "", nil)
+	return RescaleWithFallbackWithHook(ctx, api, srv, targetType, chain, nil, 0, "", nil)
 }
 
 // RescaleWithFallbackWithHook is RescaleWithFallback with a phase hook
@@ -53,6 +54,8 @@ func RescaleWithFallback(ctx context.Context, api hetzner.API, srv *hetzner.Serv
 // `st` may be nil; in that case no rescale_skipped events are emitted
 // (the wrapper uses this to keep cmd/try.go as a no-event one-off).
 // `triggeredBy` is recorded on the emitted events; pass "" when st is nil.
+// `serverID` is the local store Server.ID (NOT the hcloud server ID) —
+// the events table foreign-keys to servers.id, so we need the local row.
 func RescaleWithFallbackWithHook(
 	ctx context.Context,
 	api hetzner.API,
@@ -60,6 +63,7 @@ func RescaleWithFallbackWithHook(
 	targetType string,
 	chain []string,
 	st *store.Store,
+	serverID int64,
 	triggeredBy string,
 	phaseHook func(string),
 ) (string, error) {
@@ -89,7 +93,7 @@ func RescaleWithFallbackWithHook(
 				now := time.Now().UTC()
 				loc := srv.Datacenter.Location.Name
 				_, _ = st.AppendEvent(store.Event{
-					ServerID:    srv.ID,
+					ServerID:    serverID,
 					Kind:        "rescale_skipped",
 					FromType:    t,
 					ToType:      "",

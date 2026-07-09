@@ -188,7 +188,7 @@ func (m *Manager) runRescale(ctx context.Context, srv *store.Server, hserver *he
 		_ = m.store.UpdateEventPhase(pendingID, phase)
 	}
 
-	_, err := RescaleWithFallbackWithHook(ctx, api, hserver, target, srv.FallbackChain, m.store, triggeredBy, phaseHook)
+	_, err := RescaleWithFallbackWithHook(ctx, api, hserver, target, srv.FallbackChain, m.store, srv.ID, triggeredBy, phaseHook)
 
 	// Reconcile terminal to_type from Hetzner (authoritative). The
 	// in-memory hserver may have a stale type if RescaleWithFallback's

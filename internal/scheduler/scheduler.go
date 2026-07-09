@@ -299,7 +299,7 @@ func (s *Scheduler) dispatch(srv *store.Server, api hetzner.API, target, trigger
 	}
 
 	start := time.Now().UTC()
-	used, rescaleErr := rescaler.RescaleWithFallback(context.Background(), api, hsrv, target, srv.FallbackChain)
+	used, rescaleErr := rescaler.RescaleWithFallbackWithHook(context.Background(), api, hsrv, target, srv.FallbackChain, s.store, srv.ID, triggeredBy, nil)
 	finished := time.Now().UTC()
 
 	kind := "rescale_up"

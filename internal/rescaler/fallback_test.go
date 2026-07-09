@@ -136,7 +136,7 @@ func TestFallback_UnavailableEntrySkippedWithoutShutdown(t *testing.T) {
 		t.Fatalf("CreateServer: %v", err)
 	}
 
-	used, err := RescaleWithFallbackWithHook(context.Background(), api, srv, "cpx11", []string{"cpx11", "cpx21"}, st, "operator", nil)
+	used, err := RescaleWithFallbackWithHook(context.Background(), api, srv, "cpx11", []string{"cpx11", "cpx21"}, st, 1, "operator", nil)
 	if err != nil {
 		t.Fatalf("err = %v, want nil (cpx21 should succeed)", err)
 	}
@@ -191,7 +191,7 @@ func TestFallback_AllUnavailableReturnsErrAllUnavailable(t *testing.T) {
 		Datacenter: &hetzner.Datacenter{Location: &hetzner.Location{Name: "fsn1"}},
 	}
 
-	_, err := RescaleWithFallbackWithHook(context.Background(), api, srv, "cpx11", []string{"cpx11", "cpx21"}, st, "operator", nil)
+	_, err := RescaleWithFallbackWithHook(context.Background(), api, srv, "cpx11", []string{"cpx11", "cpx21"}, st, 1, "operator", nil)
 	if !errors.Is(err, ErrAllUnavailable) {
 		t.Fatalf("err = %v, want ErrAllUnavailable", err)
 	}
@@ -225,7 +225,7 @@ func TestFallback_PreCheckAPIErrorFailsOpen(t *testing.T) {
 		Datacenter: &hetzner.Datacenter{Location: &hetzner.Location{Name: "fsn1"}},
 	}
 
-	used, err := RescaleWithFallbackWithHook(context.Background(), api, srv, "cpx21", []string{"cpx21"}, st, "operator", nil)
+	used, err := RescaleWithFallbackWithHook(context.Background(), api, srv, "cpx21", []string{"cpx21"}, st, 1, "operator", nil)
 	if err != nil {
 		t.Fatalf("err = %v, want nil (fail-open: the API error should not block the rescale)", err)
 	}
