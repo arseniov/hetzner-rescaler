@@ -52,7 +52,10 @@
   }: Props = $props();
 
   onMount(() => {
-    serverTypes.load().catch(() => { /* loadError is set on the store */ });
+    // Task 7 (per-location cache): the store now requires a location.
+    // Task 8 will replace this with `load(server.location)` driven by a
+    // `location` prop. For now, a placeholder keeps the build green.
+    serverTypes.load('fsn1').catch(() => { /* loadError is set on the store */ });
   });
 
   // Mirror the bound value into a chips list. The chip `id` is the
