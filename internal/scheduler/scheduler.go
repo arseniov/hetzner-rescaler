@@ -6,10 +6,12 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 	"time"
 
+	"github.com/jonamat/hetzner-rescaler/internal/broadcast"
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 	"github.com/jonamat/hetzner-rescaler/internal/rescaler"
 	"github.com/jonamat/hetzner-rescaler/internal/store"
@@ -343,4 +345,48 @@ func fetchCurrentType(ctx context.Context, api hetzner.API, srv *store.Server) (
 		return "", nil
 	}
 	return s.ServerType.Name, nil
+}
+
+// Attach wires the scheduler to the store's lifecycle event hub. It walks
+// every server currently in the store (via ListAllServers) and calls Add
+// for each, then subscribes to the hub and dispatches:
+//
+//   - "created" → Add(serverID)
+//   - "deleted" → Remove(serverID)
+//   - "updated" → no-op (next tick reads fresh state from the store)
+//
+// Attach blocks until ctx is cancelled, sched.Stop is called, or the hub
+// returns a closed channel. Returns nil on graceful shutdown.
+func (s *Scheduler) Attach(ctx context.Context, hub *broadcast.Hub[store.ServerLifecycleEvent]) error {
+	servers, err := s.store.ListAllServers()
+	if err != nil {
+		return fmt.Errorf("scheduler Attach: list servers: %w", err)
+	}
+	for _, srv := range servers {
+		s.Add(srv.ID)
+	}
+
+	ch, unsub := hub.Subscribe(32)
+	defer unsub()
+
+	for {
+		select {
+		case <-s.stopCh:
+			return nil
+		case <-ctx.Done():
+			return nil
+		case evt, ok := <-ch:
+			if !ok {
+				return nil
+			}
+			switch evt.Kind {
+			case "created":
+				s.Add(evt.ServerID)
+			case "deleted":
+				s.Remove(evt.ServerID)
+			case "updated":
+				// no-op: runOne re-reads the server from the store each tick
+			}
+		}
+	}
 }

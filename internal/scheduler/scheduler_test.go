@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jonamat/hetzner-rescaler/internal/broadcast"
 	"github.com/jonamat/hetzner-rescaler/internal/hcloudmock"
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 	"github.com/jonamat/hetzner-rescaler/internal/store"
@@ -270,4 +271,47 @@ func TestScheduler_WritesTickOnNoWindows(t *testing.T) {
 	if found == nil || found.Error != "no_windows" {
 		t.Fatalf("expected scheduler_tick no_windows, got %+v", events)
 	}
+}
+
+func TestAttachLifecycle(t *testing.T) {
+	st := newStoreForScheduler(t)
+	p, _ := st.CreateProject("p", []byte("tok"), []byte("nonce12byts"))
+
+	clk := &recordingClock{t: time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)}
+	sched := New(st, stubResolver(hcloudmock.New()), clk, 50*time.Millisecond)
+
+	hub := broadcast.NewHub[store.ServerLifecycleEvent]()
+	st.SetServerLifecycleHub(hub)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() { _ = sched.Attach(ctx, hub); close(done) }()
+
+	srv, _ := st.CreateServer(p.ID, store.Server{
+		HCloudServerID: 1, Name: "w", BaseServerType: "cpx11", TopServerType: "cpx21",
+		FallbackChain: []string{"cpx21"}, Mode: "manual", Timezone: "UTC",
+	})
+
+	// Wait for the lifecycle hub to deliver "created" to Attach, which calls sched.Add.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		sched.mu.Lock()
+		_, ok := sched.added[srv.ID]
+		sched.mu.Unlock()
+		if ok {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	sched.mu.Lock()
+	_, ok := sched.added[srv.ID]
+	sched.mu.Unlock()
+	if !ok {
+		t.Fatalf("scheduler did not Add the server after lifecycle broadcast")
+	}
+
+	cancel()
+	sched.Stop()
+	<-done
 }
