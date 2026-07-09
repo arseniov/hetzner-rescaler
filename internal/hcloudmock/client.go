@@ -23,6 +23,15 @@ type Fake struct {
 	unavailable   map[string]bool
 	shutdownCount int
 
+	// getServerTypeErrors: if a server type name is here, GetServerType
+	// returns that error instead of the usual "type not found". Tests use
+	// this to exercise the API-error path without a real network call.
+	getServerTypeErrors map[string]error
+	// getServerTypeCounts records the number of GetServerType calls served
+	// per type name. Tests assert zero-call invariants (e.g. "no API call
+	// when srv.Datacenter is nil").
+	getServerTypeCounts map[string]int
+
 	// errorOverrides: if a function is set, it returns its result for the
 	// corresponding (server, type) pair. Used by tests that need a custom
 	// failure shape.
@@ -80,6 +89,47 @@ func (f *Fake) ShutdownCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.shutdownCount
+}
+
+// SetLocations replaces the Locations list on the named mock server type
+// with a single entry {Name: location, Available: available}. If the type
+// doesn't exist yet it is created. Used by tests that need to assert
+// per-location availability behavior.
+func (f *Fake) SetLocations(name, location string, available bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	t, ok := f.serverTypes[name]
+	if !ok {
+		t = &hetzner.ServerType{Name: name}
+		f.serverTypes[name] = t
+	}
+	t.Locations = []hcloud.ServerTypeLocation{{
+		Location:  &hcloud.Location{Name: location},
+		Available: available,
+	}}
+}
+
+// SetGetServerTypeError makes GetServerType return the given error for
+// the named type. Other types still succeed. Used by tests that need to
+// exercise the API-error path of IsTypeAvailable.
+func (f *Fake) SetGetServerTypeError(name string, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.getServerTypeErrors == nil {
+		f.getServerTypeErrors = map[string]error{}
+	}
+	f.getServerTypeErrors[name] = err
+}
+
+// GetServerTypeCallCount returns the total number of GetServerType calls
+// the fake has served for the given type name. Tests use it to assert a
+// helper did not make an API call when the precondition was already
+// known (e.g. IsTypeAvailable should make zero calls when srv has no
+// Datacenter).
+func (f *Fake) GetServerTypeCallCount(name string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.getServerTypeCounts[name]
 }
 
 // ---- hetzner.API ----
@@ -146,15 +196,18 @@ func (f *Fake) ListServerTypes(_ context.Context) ([]*hetzner.ServerType, error)
 func (f *Fake) GetServerType(_ context.Context, name string) (*hetzner.ServerType, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.getServerTypeCounts == nil {
+		f.getServerTypeCounts = map[string]int{}
+	}
+	f.getServerTypeCounts[name]++
+	if err, ok := f.getServerTypeErrors[name]; ok {
+		return nil, err
+	}
 	t, ok := f.serverTypes[name]
 	if !ok {
 		return nil, fmt.Errorf("hcloudmock: type %q not found", name)
 	}
-	// Return a copy so callers can't mutate the fake's internal
-	// state. Hetzner's hcloud.ServerType doesn't expose availability
-	// (the API only reports it implicitly via ChangeServerType
-	// failures), so there's nothing to surface here — the test
-	// harness asserts "unavailable" by failing ChangeServerType.
+	// Return a copy so callers can't mutate the fake's internal state.
 	out := *t
 	return &out, nil
 }
