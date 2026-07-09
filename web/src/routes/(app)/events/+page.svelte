@@ -54,7 +54,8 @@
     'rescale_fallback',
     'rescale_failed',
     'promote',
-    'demote'
+    'demote',
+    'scheduler_tick'
   ];
 </script>
 
