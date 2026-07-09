@@ -76,6 +76,9 @@ func (s *Store) CreateServer(projectID int64, srv Server) (*Server, error) {
 	srv.CreatedAt = now
 	srv.UpdatedAt = now
 	srv.store = s
+	if s.serverLifecycleHub != nil {
+		s.serverLifecycleHub.Broadcast(ServerLifecycleEvent{Kind: "created", ServerID: srv.ID})
+	}
 	return &srv, nil
 }
 
@@ -151,12 +154,20 @@ func (s *Store) UpdateServer(srv Server) error {
 	if n == 0 {
 		return ErrNotFound
 	}
+	if s.serverLifecycleHub != nil {
+		s.serverLifecycleHub.Broadcast(ServerLifecycleEvent{Kind: "updated", ServerID: srv.ID})
+	}
 	return nil
 }
 
 func (s *Store) DeleteServer(id int64) error {
-	_, err := s.db.Exec(`DELETE FROM servers WHERE id = ?`, id)
-	return err
+	if _, err := s.db.Exec(`DELETE FROM servers WHERE id = ?`, id); err != nil {
+		return err
+	}
+	if s.serverLifecycleHub != nil {
+		s.serverLifecycleHub.Broadcast(ServerLifecycleEvent{Kind: "deleted", ServerID: id})
+	}
+	return nil
 }
 
 const serverCols = `id, project_id, hcloud_server_id, name, label, base_server_type, top_server_type,
