@@ -6,6 +6,14 @@
   support via `apiResolve`. Server create/update/delete now broadcast a
   `ServerLifecycleEvent` on the store's hub; both `serve` and `start`
   subscribe via `scheduler.Attach`.
+- Pre-rescale availability gate: the rescaler now skips chain entries
+  whose target server type is unavailable in the server's location,
+  emitting a `rescale_skipped` event instead of shutting the server down
+  (which previously caused a perpetual off → on cycle on sold-out types).
+  The `GET /api/server-types` endpoint now requires `?location=X` and
+  reports per-location availability; the web's server-type picker shows
+  an "Unavailable" badge for sold-out types (which remain selectable —
+  they may come back).
 
 ## 1.0.2
 **2021-11-20**
