@@ -115,11 +115,11 @@
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <div class="flex flex-col gap-1.5">
         <Label for="f-base">{m.server_edit_field_base()}</Label>
-        <ServerTypeSelect id="f-base" bind:value={form.base_server_type} server={server} required />
+        <ServerTypeSelect id="f-base" bind:value={form.base_server_type} server={server} location={server?.location} required />
       </div>
       <div class="flex flex-col gap-1.5">
         <Label for="f-top">{m.server_edit_field_top()}</Label>
-        <ServerTypeSelect id="f-top" bind:value={form.top_server_type} server={server} required />
+        <ServerTypeSelect id="f-top" bind:value={form.top_server_type} server={server} location={server?.location} required />
       </div>
     </div>
 
