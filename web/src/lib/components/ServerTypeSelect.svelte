@@ -31,6 +31,12 @@
      * are rendered and the dropdown behaves as a plain picker.
      */
     server?: Server | null;
+    /**
+     * Server location used to drive `serverTypes.load(location)`. When
+     * omitted (purely-presentation uses that don't render badges), the
+     * onMount load is skipped.
+     */
+    location?: string;
     id?: string;
     required?: boolean;
     disabled?: boolean;
@@ -38,24 +44,32 @@
     class?: string;
     ariaLabel?: string;
     placeholder?: string;
+    /**
+     * Whether the dropdown is open. Bound from the parent so tests can
+     * pre-mount the dropdown contents without simulating a click.
+     * Has no effect on user-facing behavior — the trigger toggles this
+     * transparently.
+     */
+    open?: boolean;
   };
   let {
     value = $bindable(),
     server,
+    location,
     id,
     required = false,
     disabled = false,
     onlyAvailable = false,
     class: className = '',
     ariaLabel,
-    placeholder
+    placeholder,
+    open = $bindable(false)
   }: Props = $props();
 
   onMount(() => {
-    // Task 7 (per-location cache): the store now requires a location.
-    // Task 8 will replace this with `load(server.location)` driven by a
-    // `location` prop. For now, a placeholder keeps the build green.
-    serverTypes.load('fsn1').catch(() => { /* loadError is set on the store */ });
+    if (location) {
+      serverTypes.load(location).catch(() => { /* loadError is set on the store */ });
+    }
   });
 
   let options = $derived.by<ServerType[]>(() => {
@@ -108,7 +122,7 @@
   );
 </script>
 
-<Select.Root type="single" bind:value={() => value, (v) => (value = v ?? '')} {disabled}>
+<Select.Root type="single" bind:value={() => value, (v) => (value = v ?? '')} bind:open {disabled}>
   <Select.Trigger
     {id}
     {disabled}
@@ -149,6 +163,11 @@
                 )}
               >
                 {chipLabel(role)}
+              </span>
+            {/if}
+            {#if !t.available}
+              <span class="ml-auto inline-flex shrink-0 items-center rounded-sm border border-border bg-muted px-1 py-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+                {m.server_type_unavailable()}
               </span>
             {/if}
             <span class="font-mono">{t.name}</span>
