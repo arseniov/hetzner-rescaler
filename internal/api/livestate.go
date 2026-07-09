@@ -7,13 +7,14 @@ import (
 )
 
 // LiveServerState is the slice of Hetzner server state the API exposes
-// alongside the stored configuration. Both fields are zero values when
+// alongside the stored configuration. All fields are zero values when
 // Hetzner is unreachable, the server has been deleted from Hetzner, or
 // the project's API token is invalid — there is no failure path that
 // turns into a non-2xx response from /api/servers.
 type LiveServerState struct {
 	Status      string
 	CurrentType string
+	Location    string
 }
 
 // liveServerState fetches the live state for a single server. It is
@@ -50,6 +51,9 @@ func (d Deps) liveServerState(ctx context.Context, srv *store.Server) LiveServer
 	}
 	if hs.ServerType != nil {
 		out.CurrentType = hs.ServerType.Name
+	}
+	if hs.Datacenter != nil && hs.Datacenter.Location != nil {
+		out.Location = hs.Datacenter.Location.Name
 	}
 	return out
 }

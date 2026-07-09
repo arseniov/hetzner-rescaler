@@ -164,12 +164,15 @@ func TestDeleteServer_RemovesRow(t *testing.T) {
 // only in tests for the live-state plumbing. Keeping it in the test
 // file avoids polluting the main package with a constructor that
 // has no production call site.
-func newLiveServer(id int, status hcloud.ServerStatus, typeName string) *hetzner.Server {
+func newLiveServer(id int, status hcloud.ServerStatus, typeName, location string) *hetzner.Server {
 	return &hetzner.Server{
 		ID:         id,
 		Name:       "live-" + itoa(int64(id)),
 		Status:     status,
 		ServerType: &hetzner.ServerType{Name: typeName},
+		Datacenter: &hcloud.Datacenter{
+			Location: &hcloud.Location{Name: location},
+		},
 	}
 }
 
@@ -181,7 +184,7 @@ func TestListServers_PopulatesLiveState(t *testing.T) {
 	// flow through to the JSON response.
 	stub := &fakeHetzner{
 		servers: []*hetzner.Server{
-			newLiveServer(1, hcloud.ServerStatusRunning, "cx42"),
+			newLiveServer(1, hcloud.ServerStatusRunning, "cx42", "fsn1"),
 		},
 	}
 	deps.APIFor = func(projectID int64) (hetzner.API, error) { return stub, nil }
@@ -251,7 +254,7 @@ func TestGetServer_PopulatesLiveState(t *testing.T) {
 	_, sid := seedServer(t, deps, "p1", "web-1")
 	stub := &fakeHetzner{
 		servers: []*hetzner.Server{
-			newLiveServer(1, hcloud.ServerStatusInitializing, "cpx31"),
+			newLiveServer(1, hcloud.ServerStatusInitializing, "cpx31", "fsn1"),
 		},
 	}
 	deps.APIFor = func(projectID int64) (hetzner.API, error) { return stub, nil }
@@ -269,6 +272,9 @@ func TestGetServer_PopulatesLiveState(t *testing.T) {
 	}
 	if got.CurrentType != "cpx31" {
 		t.Fatalf("current_type: got %q want cpx31", got.CurrentType)
+	}
+	if got.Location != "fsn1" {
+		t.Fatalf("location: got %q want fsn1", got.Location)
 	}
 }
 
