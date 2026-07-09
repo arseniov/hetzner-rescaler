@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## Unreleased
+- Run the per-server scheduler inside `serve` so scheduled / auto_promote
+  events fire from the web UI without a separate `start` process. Multi-project
+  support via `apiResolve`. Server create/update/delete now broadcast a
+  `ServerLifecycleEvent` on the store's hub; both `serve` and `start`
+  subscribe via `scheduler.Attach`.
+
 ## 1.0.2
 **2021-11-20**
 - Added support for timezones
