@@ -1,15 +1,18 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/jonamat/hetzner-rescaler/internal/broadcast"
 	"github.com/jonamat/hetzner-rescaler/internal/crypto"
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 	"github.com/jonamat/hetzner-rescaler/internal/scheduler"
+	"github.com/jonamat/hetzner-rescaler/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -48,74 +51,41 @@ func runStart(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	// Build one Hetzner API per project
-	apiByProject := map[int64]hetzner.API{}
-	for _, srv := range servers {
-		if _, ok := apiByProject[srv.ProjectID]; ok {
-			continue
-		}
-		proj, err := st.GetProject(srv.ProjectID)
-		if err != nil {
-			fmt.Println("project:", err)
-			return
-		}
-		token, err := crypto.Decrypt(key, proj.HCloudTokenEncrypted, proj.HCloudTokenNonce)
-		if err != nil {
-			fmt.Println("decrypt token:", err)
-			return
-		}
-		api, err := hetzner.NewClient(string(token))
-		if err != nil {
-			fmt.Println("client:", err)
-			return
-		}
-		apiByProject[srv.ProjectID] = api
-	}
-
-	// Phase 1: a single scheduler instance with one project's API.
-	// Multi-project in one process is phase 2; for now, run one `start` per
-	// project if you have more than one.
-	//
-	// BUG FIX: do NOT index the map by `0` — SQLite AUTOINCREMENT IDs start
-	// at 1, so apiByProject[0] would always be nil. Pick the first API we
-	// actually built.
-	var firstAPI hetzner.API
-	var firstProjectID int64
-	for id, api := range apiByProject {
-		firstAPI = api
-		firstProjectID = id
-		break
-	}
-	if firstAPI == nil {
-		fmt.Println("error: failed to build API client for any project")
+	keyring, err := crypto.NewKeyringFromBytes(key)
+	if err != nil {
+		fmt.Println("keyring:", err)
 		return
 	}
-	if len(apiByProject) > 1 {
-		fmt.Printf("WARNING: multiple projects detected; phase 1 schedules only project %d. Run one `hetzner-rescaler start` per project for full coverage.\n", firstProjectID)
-	}
+	keyringHolder = keyring
 
-	sched := scheduler.New(st, firstAPI, scheduler.RealClock{}, 30*time.Second)
+	// Lifecycle hub: receive server create/update/delete events so the
+	// scheduler can keep its per-server goroutines in sync without polling.
+	lifecycleHub := broadcast.NewHub[store.ServerLifecycleEvent]()
+	st.SetServerLifecycleHub(lifecycleHub)
 
-	// Register only the servers that belong to the selected project.
-	registered := 0
-	for _, srv := range servers {
-		if srv.ProjectID != firstProjectID {
-			continue
-		}
-		sched.Add(srv.ID)
-		registered++
-	}
+	// Scheduler: per-server goroutines that drive scheduled / auto_promote
+	// rescales. The apiResolve uses the same per-project factory the
+	// API server uses, so multi-project deployments get full coverage
+	// (no phase-1 warning anymore).
+	factory := apiFactory(st)
+	sched := scheduler.New(st, func(_ context.Context, projectID int64) (hetzner.API, error) {
+		return factory(projectID)
+	}, scheduler.RealClock{}, 30*time.Second)
 
-	fmt.Printf("Scheduler started for %d servers. Press Ctrl+C to stop.\n", registered)
+	// Lifecycle: bind to signal context and run Attach in a goroutine.
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
 
-	// Handle SIGINT/SIGTERM
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		<-sig
-		fmt.Println("\nShutting down...")
-		sched.Stop()
+		if err := sched.Attach(ctx, lifecycleHub); err != nil && !errors.Is(err, context.Canceled) {
+			fmt.Println("scheduler attach:", err)
+		}
 	}()
 
-	sched.Run()
+	fmt.Printf("Scheduler started for %d existing servers. Press Ctrl+C to stop.\n", len(servers))
+
+	// Block until SIGINT/SIGTERM, then drain.
+	<-ctx.Done()
+	fmt.Println("\nShutting down...")
+	sched.Stop()
 }
