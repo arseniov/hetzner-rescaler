@@ -12,6 +12,7 @@
   import Dialog from '$lib/components/ui/dialog.svelte';
   import StatusBadge, { type Status } from '$lib/components/StatusBadge.svelte';
   import PendingRescaleBadge from '$lib/components/PendingRescaleBadge.svelte';
+  import ModePill from '$lib/components/ModePill.svelte';
   import { pendingRescale } from '$lib/stores/pendingRescale.svelte';
 
   let server = $state<Server | null>(null);
@@ -198,20 +199,25 @@
         <h1 class="font-display text-2xl font-semibold tracking-tight text-foreground">
           {s.name}
         </h1>
-        <p class="mt-1 font-mono text-xs text-muted-foreground">
-          {m.server_detail_hcloud_id({ id: s.hcloud_server_id })}
-          <span class="mx-2 text-foreground/30">·</span>
-          {m.server_detail_mode({ mode: s.mode })}
-          {#if s.promote_state}
-            <span class="mx-2 text-foreground/30">·</span>
-            {m.server_detail_state({ state: s.promote_state })}
-          {/if}
-        </p>
         {#if pendingEvent}
           <div class="mt-2">
             <PendingRescaleBadge event={pendingEvent} />
           </div>
         {/if}
+        <div class="mt-2">
+          <ModePill
+            mode={s.mode}
+            promoteState={s.promote_state ?? null}
+            lastTickAt={(events.find((e) => e.kind === 'scheduler_tick')?.started_at) ?? null}
+            windows={windows.map((w) => ({
+              days_of_week: w.days_of_week,
+              start_time: w.start_time,
+              stop_time: w.stop_time,
+              target_type: w.target_type,
+              enabled: w.enabled,
+            }))}
+          />
+        </div>
       </div>
       <Button variant="ghost" size="sm" href="/servers/{s.id}/edit" disabled={isRescaling}>
         <Pencil class="size-3.5" strokeWidth={1.75} aria-hidden="true" />
@@ -233,6 +239,7 @@
     >
       {#snippet children(tab)}
         {#if tab === 'overview'}
+          {@const upDisabledReason = s.mode === 'manual' ? null : (s.mode === 'auto_promote' ? m.mode_pill_button_disabled_autopromote() : m.mode_pill_button_disabled_scheduled())}
           <!--
             Overview: three stacked panels —
               1. Current state (live Hetzner snapshot)
@@ -308,7 +315,8 @@
               <Button
                 variant="primary"
                 size="sm"
-                disabled={busy !== null || isRescaling}
+                disabled={busy !== null || isRescaling || upDisabledReason !== null}
+                title={upDisabledReason ?? undefined}
                 onclick={() => askRescale('up')}
               >
                 <ArrowUp class="size-3.5" strokeWidth={1.75} aria-hidden="true" />
@@ -317,7 +325,8 @@
               <Button
                 variant="default"
                 size="sm"
-                disabled={busy !== null || isRescaling}
+                disabled={busy !== null || isRescaling || upDisabledReason !== null}
+                title={upDisabledReason ?? undefined}
                 onclick={() => askRescale('down')}
               >
                 <ArrowDown class="size-3.5" strokeWidth={1.75} aria-hidden="true" />
