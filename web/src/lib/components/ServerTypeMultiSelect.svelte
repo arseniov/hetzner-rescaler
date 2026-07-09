@@ -34,6 +34,14 @@
     value: string[];
     excluded?: string[];
     server?: Server | null;
+    /**
+     * Server location used to drive `serverTypes.load(location)`. When
+     * omitted (purely-presentation uses that don't render badges), the
+     * onMount load is skipped. Defaults to undefined so callers that
+     * don't yet know the server's location (Add-server dialog while
+     * typing) don't trigger a load for the wrong region.
+     */
+    location?: string;
     id?: string;
     disabled?: boolean;
     class?: string;
@@ -44,6 +52,7 @@
     value = $bindable(),
     excluded = [],
     server = null,
+    location,
     id,
     disabled = false,
     class: className = '',
@@ -52,10 +61,9 @@
   }: Props = $props();
 
   onMount(() => {
-    // Task 7 (per-location cache): the store now requires a location.
-    // Task 8 will replace this with `load(server.location)` driven by a
-    // `location` prop. For now, a placeholder keeps the build green.
-    serverTypes.load('fsn1').catch(() => { /* loadError is set on the store */ });
+    if (location) {
+      serverTypes.load(location).catch(() => { /* loadError is set on the store */ });
+    }
   });
 
   // Mirror the bound value into a chips list. The chip `id` is the

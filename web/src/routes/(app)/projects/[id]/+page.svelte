@@ -241,6 +241,7 @@
           id="reg-fallback"
           bind:value={newFallback}
           excluded={[newBase, newTop].filter(Boolean)}
+          location="fsn1"
         />
       </div>
     </div>

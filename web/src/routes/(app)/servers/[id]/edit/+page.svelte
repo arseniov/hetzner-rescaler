@@ -129,6 +129,8 @@
         id="f-chain"
         bind:value={form.fallback_chain}
         excluded={[form.base_server_type, form.top_server_type].filter(Boolean)}
+        server={server}
+        location={server?.location}
       />
     </div>
 

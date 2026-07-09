@@ -14,6 +14,11 @@
   reports per-location availability; the web's server-type picker shows
   an "Unavailable" badge for sold-out types (which remain selectable —
   they may come back).
+  - **Notes for operators:** this release upgrades `hcloud-go` from
+    v1.33.0 to v2.44.0 (transitive type widening; any in-tree helpers
+    that touched the SDK may need to adapt to v2's API surface) and
+    raises the `go.mod` `go` directive to `1.25.0` — building from
+    source on older Go toolchains will fail.
 
 ## 1.0.2
 **2021-11-20**

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup } from '@testing-library/svelte';
+import { tick } from 'svelte';
 
 // $env/dynamic/public's virtual module returns undefined for `env` in
 // vitest; the paraglide `m` helper pulls from there. Mock to no-op.
@@ -112,5 +113,42 @@ describe('ServerTypeMultiSelect', () => {
       props: { value: ['cpx11'], server: null },
     });
     expect(getByText('cpx11')).toBeTruthy();
+  });
+
+  it('passes the location to serverTypes.load on mount', async () => {
+    const loadSpy = vi.spyOn(serverTypes, 'load');
+    render(ServerTypeMultiSelect, {
+      props: { value: ['cpx11'], location: 'nbg1' },
+    });
+    await tick();
+    // onMount runs after the first render, so the spy must have seen
+    // exactly one load call with the supplied location.
+    expect(loadSpy).toHaveBeenCalledWith('nbg1');
+    loadSpy.mockRestore();
+  });
+
+  it('skips load when location is not provided', async () => {
+    // Backwards-compat: callers that pre-date the location prop
+    // (e.g. some tests, future purely-presentation uses) must not
+    // trigger a load for an arbitrary default.
+    const loadSpy = vi.spyOn(serverTypes, 'load');
+    render(ServerTypeMultiSelect, {
+      props: { value: ['cpx11'] },
+    });
+    await tick();
+    expect(loadSpy).not.toHaveBeenCalled();
+    loadSpy.mockRestore();
+  });
+
+  it('uses conditional load with location="fsn1"', async () => {
+    // Mirrors the project page's register-server dialog, which passes
+    // an explicit fsn1 default while the operator is typing.
+    const loadSpy = vi.spyOn(serverTypes, 'load');
+    render(ServerTypeMultiSelect, {
+      props: { value: [], location: 'fsn1' },
+    });
+    await tick();
+    expect(loadSpy).toHaveBeenCalledWith('fsn1');
+    loadSpy.mockRestore();
   });
 });
