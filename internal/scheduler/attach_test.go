@@ -64,6 +64,15 @@ func TestAttach_RuntimeCreatedServerGetsTick(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+	// Assert Add actually happened; without this, a regression that
+	// detaches the broadcast from sched.Add would still pass the test
+	// (sched.tick re-reads from the store and produces an event anyway).
+	sched.mu.Lock()
+	_, added := sched.added[srv.ID]
+	sched.mu.Unlock()
+	if !added {
+		t.Fatal("scheduler did not Add the server after lifecycle broadcast")
+	}
 
 	// Run one tick: out-of-window → writeTickSummary("ok_idle") emits a
 	// scheduler_tick event, proving the scheduler is alive and reachable
