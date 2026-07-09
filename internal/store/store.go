@@ -17,8 +17,9 @@ const currentSchemaVersion = 3
 
 // Store is the SQLite-backed persistence layer.
 type Store struct {
-	db  *sql.DB
-	hub *broadcast.Hub[Event]
+	db                 *sql.DB
+	hub                *broadcast.Hub[Event]
+	serverLifecycleHub *broadcast.Hub[ServerLifecycleEvent]
 }
 
 // SetBroadcastHub attaches an in-process pub/sub hub that receives every
@@ -32,6 +33,22 @@ func (s *Store) SetBroadcastHub(hub *broadcast.Hub[Event]) {
 // use this to receive live events as they are inserted.
 func (s *Store) EventHub() *broadcast.Hub[Event] {
 	return s.hub
+}
+
+// SetServerLifecycleHub attaches an in-process pub/sub hub that receives
+// every ServerLifecycleEvent after the corresponding successful write
+// (CreateServer / UpdateServer / DeleteServer). Pass nil to detach.
+//
+// Subscribers use these to keep in-process workers (e.g., the scheduler's
+// per-server goroutines) in sync with the database without polling.
+func (s *Store) SetServerLifecycleHub(hub *broadcast.Hub[ServerLifecycleEvent]) {
+	s.serverLifecycleHub = hub
+}
+
+// ServerLifecycleHub returns the broadcast hub attached via
+// SetServerLifecycleHub, or nil if none has been attached.
+func (s *Store) ServerLifecycleHub() *broadcast.Hub[ServerLifecycleEvent] {
+	return s.serverLifecycleHub
 }
 
 // Open opens (or creates) the database at path and runs all migrations.

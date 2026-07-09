@@ -1,15 +1,23 @@
 package scheduler
 
 import (
+	"context"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/jonamat/hetzner-rescaler/internal/broadcast"
 	"github.com/jonamat/hetzner-rescaler/internal/hcloudmock"
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 	"github.com/jonamat/hetzner-rescaler/internal/store"
 )
+
+func stubResolver(api hetzner.API) func(context.Context, int64) (hetzner.API, error) {
+	return func(_ context.Context, _ int64) (hetzner.API, error) {
+		return api, nil
+	}
+}
 
 type recordingClock struct {
 	mu sync.Mutex
@@ -55,7 +63,7 @@ func TestSchedulerTriggersRescaleOnWindowEntry(t *testing.T) {
 
 	clk := &recordingClock{t: time.Date(2026, 6, 29, 0, 30, 0, 0, time.UTC)}
 
-	sched := New(st, api, clk, 50*time.Millisecond)
+	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
 	sched.Add(srv.ID)
 
 	done := make(chan struct{})
@@ -79,7 +87,7 @@ func TestSchedulerAutoPromoteTriggersRescale(t *testing.T) {
 
 	clk := &recordingClock{t: time.Date(2026, 6, 29, 12, 0, 0, 0, time.UTC)}
 
-	sched := New(st, api, clk, 50*time.Millisecond)
+	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
 	sched.Add(srv.ID)
 
 	// Set promote_state and tick manually
@@ -117,7 +125,7 @@ func seedSchedulerTestServer(t *testing.T, st *store.Store) *store.Server {
 		HCloudServerID: 1, Name: "w", Label: "w",
 		BaseServerType: "cpx11", TopServerType: "cpx31",
 		FallbackChain: []string{"cpx31", "cpx11"},
-		Mode: "auto_promote", Timezone: "UTC",
+		Mode:          "auto_promote", Timezone: "UTC",
 	})
 	if err != nil {
 		t.Fatalf("CreateServer: %v", err)
@@ -133,7 +141,7 @@ func TestScheduler_WritesSchedulerTickOnIdleAutoPromote(t *testing.T) {
 	api.AddServer(&hetzner.Server{ID: srv.HCloudServerID, Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx31"}})
 
 	clk := &recordingClock{t: time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)}
-	sched := New(st, api, clk, 50*time.Millisecond)
+	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
 	sched.Add(srv.ID)
 
 	// Server at top + promote_requested → tick finds current == top → "ok_idle".
@@ -174,7 +182,7 @@ func TestScheduler_DebouncesTickHeartbeat(t *testing.T) {
 	api.AddServer(&hetzner.Server{ID: srv.HCloudServerID, Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx31"}})
 
 	clk := &recordingClock{t: time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)}
-	sched := New(st, api, clk, 50*time.Millisecond)
+	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
 	sched.Add(srv.ID)
 
 	ps := "promote_requested"
@@ -207,7 +215,7 @@ func TestScheduler_WritesTickOnLockContention(t *testing.T) {
 	api.AddServer(&hetzner.Server{ID: srv.HCloudServerID, Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx11"}})
 
 	clk := &recordingClock{t: time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)}
-	sched := New(st, api, clk, 50*time.Millisecond)
+	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
 	sched.Add(srv.ID)
 
 	// Hold the action lock so AcquireAction returns false.
@@ -247,7 +255,7 @@ func TestScheduler_WritesTickOnNoWindows(t *testing.T) {
 	api.AddServer(&hetzner.Server{ID: srv.HCloudServerID, Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx11"}})
 
 	clk := &recordingClock{t: time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)}
-	sched := New(st, api, clk, 50*time.Millisecond)
+	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
 	sched.Add(srv.ID)
 
 	sched.tick(srv.ID)
@@ -263,4 +271,47 @@ func TestScheduler_WritesTickOnNoWindows(t *testing.T) {
 	if found == nil || found.Error != "no_windows" {
 		t.Fatalf("expected scheduler_tick no_windows, got %+v", events)
 	}
+}
+
+func TestAttachLifecycle(t *testing.T) {
+	st := newStoreForScheduler(t)
+	p, _ := st.CreateProject("p", []byte("tok"), []byte("nonce12byts"))
+
+	clk := &recordingClock{t: time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)}
+	sched := New(st, stubResolver(hcloudmock.New()), clk, 50*time.Millisecond)
+
+	hub := broadcast.NewHub[store.ServerLifecycleEvent]()
+	st.SetServerLifecycleHub(hub)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() { _ = sched.Attach(ctx, hub); close(done) }()
+
+	srv, _ := st.CreateServer(p.ID, store.Server{
+		HCloudServerID: 1, Name: "w", BaseServerType: "cpx11", TopServerType: "cpx21",
+		FallbackChain: []string{"cpx21"}, Mode: "manual", Timezone: "UTC",
+	})
+
+	// Wait for the lifecycle hub to deliver "created" to Attach, which calls sched.Add.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		sched.mu.Lock()
+		_, ok := sched.added[srv.ID]
+		sched.mu.Unlock()
+		if ok {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	sched.mu.Lock()
+	_, ok := sched.added[srv.ID]
+	sched.mu.Unlock()
+	if !ok {
+		t.Fatalf("scheduler did not Add the server after lifecycle broadcast")
+	}
+
+	cancel()
+	sched.Stop()
+	<-done
 }

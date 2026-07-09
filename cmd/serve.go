@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/jonamat/hetzner-rescaler/internal/crypto"
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 	"github.com/jonamat/hetzner-rescaler/internal/rescaler"
+	"github.com/jonamat/hetzner-rescaler/internal/scheduler"
 	"github.com/jonamat/hetzner-rescaler/internal/store"
 
 	"github.com/spf13/cobra"
@@ -76,6 +78,20 @@ func runServe(cmd *cobra.Command, args []string) error {
 	eventHub := broadcast.NewHub[store.Event]()
 	st.SetBroadcastHub(eventHub)
 
+	// Server-lifecycle hub: receive every CreateServer / UpdateServer /
+	// DeleteServer write so the scheduler can add or remove per-server
+	// goroutines without polling.
+	lifecycleHub := broadcast.NewHub[store.ServerLifecycleEvent]()
+	st.SetServerLifecycleHub(lifecycleHub)
+
+	// Scheduler: per-server goroutines that drive scheduled / auto_promote
+	// rescales. The apiResolve closure uses the same per-project apiFactory
+	// the rescaler manager uses, so multi-project deployments schedule
+	// every project's servers.
+	sched := scheduler.New(st, func(_ context.Context, projectID int64) (hetzner.API, error) {
+		return apiFactory(st)(projectID)
+	}, scheduler.RealClock{}, 30*time.Second)
+
 	// Rescale manager: owns the async rescale goroutines. Built first so it
 	// can Start (recovery of orphaned pending rows) before the API begins
 	// serving. The resolver wires Manager to the per-project API factory
@@ -92,6 +108,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 		defer shutdownCancel()
 		_ = rescalerManager.Shutdown(shutdownCtx)
 	}()
+
+	go func() {
+		if err := sched.Attach(ctx, lifecycleHub); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("scheduler attach", "err", err)
+		}
+	}()
+	defer sched.Stop()
 
 	deps := api.Deps{
 		InternalToken: token,
