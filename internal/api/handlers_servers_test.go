@@ -249,6 +249,50 @@ func TestListServers_OmitsLiveStateWhenHetznerFails(t *testing.T) {
 	}
 }
 
+// TestListServers_OmitsLocationWhenDatacenterLocationNil guards the
+// nil-guard branch in liveServerState: when Hetzner returns a Server
+// with a non-nil Datacenter but nil Datacenter.Location, the response
+// must omit the `location` field rather than emit an empty string. The
+// empty-string leak would make the web renderer unable to distinguish
+// "server lives at an unknown location" from "location unavailable".
+func TestListServers_OmitsLocationWhenDatacenterLocationNil(t *testing.T) {
+	deps, _ := newTestDeps(t)
+	_, _ = seedServer(t, deps, "p1", "web-1")
+	// Server has a Datacenter but the Location pointer inside it is nil.
+	// This is plausibly reachable if Hetzner's API ever returns a
+	// partially-populated Server (e.g. mid-provisioning, or a newer
+	// field shape the SDK doesn't know about).
+	stub := &fakeHetzner{
+		servers: []*hetzner.Server{
+			{
+				ID:         1,
+				Name:       "live-1",
+				Status:     hcloud.ServerStatusRunning,
+				ServerType: &hetzner.ServerType{Name: "cx42"},
+				Datacenter: &hcloud.Datacenter{Location: nil},
+			},
+		},
+	}
+	deps.APIFor = func(projectID int64) (hetzner.API, error) { return stub, nil }
+
+	h := NewRouter(deps)
+	req := authedRequest(t, "GET", "/api/servers", nil)
+	rr := recorder(t, h, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d (body=%q)", rr.Code, rr.Body.String())
+	}
+	var raw []map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(raw) != 1 {
+		t.Fatalf("want 1 server, got %d", len(raw))
+	}
+	if _, ok := raw[0]["location"]; ok {
+		t.Fatalf("location should be omitted when Datacenter.Location is nil; got %v", raw[0]["location"])
+	}
+}
+
 func TestGetServer_PopulatesLiveState(t *testing.T) {
 	deps, _ := newTestDeps(t)
 	_, sid := seedServer(t, deps, "p1", "web-1")
