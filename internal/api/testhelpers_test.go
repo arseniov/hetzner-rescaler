@@ -36,7 +36,7 @@ func (f *fakeHetzner) ListServers(ctx context.Context) ([]*hetzner.Server, error
 	return f.servers, nil
 }
 
-func (f *fakeHetzner) GetServer(ctx context.Context, id int) (*hetzner.Server, error) {
+func (f *fakeHetzner) GetServer(ctx context.Context, id int64) (*hetzner.Server, error) {
 	for i := range f.servers {
 		if f.servers[i].ID == id {
 			return f.servers[i], nil
@@ -70,6 +70,6 @@ func (f *fakeHetzner) GetServerType(ctx context.Context, name string) (*hetzner.
 	return nil, nil
 }
 
-func (f *fakeHetzner) GetAction(ctx context.Context, id int) (*hetzner.Action, error) {
+func (f *fakeHetzner) GetAction(ctx context.Context, id int64) (*hetzner.Action, error) {
 	return nil, nil
 }

@@ -71,7 +71,7 @@ func runTry(cmd *cobra.Command, args []string) {
 		return
 	}
 
-	hsrv, err := api.GetServer(context.Background(), srv.HCloudServerID)
+	hsrv, err := api.GetServer(context.Background(), int64(srv.HCloudServerID))
 	if err != nil {
 		fmt.Println("get server:", err)
 		return

@@ -1,7 +1,7 @@
 package hetzner
 
 import (
-	"github.com/hetznercloud/hcloud-go/hcloud"
+	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 )
 
 // ServerType is a small re-export of hcloud.ServerType to keep the engine

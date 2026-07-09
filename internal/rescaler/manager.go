@@ -124,7 +124,7 @@ func (m *Manager) Submit(ctx context.Context, srv *store.Server, target string, 
 	if err != nil {
 		return 0, err
 	}
-	hserver, err := api.GetServer(ctx, srv.HCloudServerID)
+	hserver, err := api.GetServer(ctx, int64(srv.HCloudServerID))
 	if err != nil {
 		return 0, err
 	}
@@ -195,7 +195,7 @@ func (m *Manager) runRescale(ctx context.Context, srv *store.Server, hserver *he
 	// final Rescale call updated the struct; we trust the Hetzner
 	// response over that.
 	var toType string
-	if h, gerr := api.GetServer(ctx, srv.HCloudServerID); gerr == nil && h != nil && h.ServerType != nil {
+	if h, gerr := api.GetServer(ctx, int64(srv.HCloudServerID)); gerr == nil && h != nil && h.ServerType != nil {
 		toType = h.ServerType.Name
 	} else {
 		// Reconciliation failed — fall back to the requested target on

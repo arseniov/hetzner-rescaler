@@ -42,7 +42,7 @@ func (d Deps) liveServerState(ctx context.Context, srv *store.Server) LiveServer
 	if err != nil {
 		return LiveServerState{}
 	}
-	hs, err := api.GetServer(ctx, srv.HCloudServerID)
+	hs, err := api.GetServer(ctx, int64(srv.HCloudServerID))
 	if err != nil || hs == nil {
 		return LiveServerState{}
 	}

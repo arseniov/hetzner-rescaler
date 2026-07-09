@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hetznercloud/hcloud-go/hcloud"
+	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 	"github.com/jonamat/hetzner-rescaler/internal/store"
 )
@@ -164,10 +164,10 @@ func TestDeleteServer_RemovesRow(t *testing.T) {
 // only in tests for the live-state plumbing. Keeping it in the test
 // file avoids polluting the main package with a constructor that
 // has no production call site.
-func newLiveServer(id int, status hcloud.ServerStatus, typeName, location string) *hetzner.Server {
+func newLiveServer(id int64, status hcloud.ServerStatus, typeName, location string) *hetzner.Server {
 	return &hetzner.Server{
 		ID:         id,
-		Name:       "live-" + itoa(int64(id)),
+		Name:       "live-" + itoa(id),
 		Status:     status,
 		ServerType: &hetzner.ServerType{Name: typeName},
 		Datacenter: &hcloud.Datacenter{

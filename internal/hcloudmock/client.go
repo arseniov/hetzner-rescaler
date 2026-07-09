@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hetznercloud/hcloud-go/hcloud"
+	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 )
 
@@ -16,10 +16,10 @@ import (
 type Fake struct {
 	mu sync.Mutex
 
-	servers       map[int]*hetzner.Server
+	servers       map[int64]*hetzner.Server
 	serverTypes   map[string]*hetzner.ServerType
-	actions       map[int]*hetzner.Action
-	nextActionID  int
+	actions       map[int64]*hetzner.Action
+	nextActionID  int64
 	unavailable   map[string]bool
 	shutdownCount int
 
@@ -32,9 +32,9 @@ type Fake struct {
 // New returns a fresh Fake with a few default server types pre-populated.
 func New() *Fake {
 	f := &Fake{
-		servers:     map[int]*hetzner.Server{},
+		servers:     map[int64]*hetzner.Server{},
 		serverTypes: map[string]*hetzner.ServerType{},
-		actions:     map[int]*hetzner.Action{},
+		actions:     map[int64]*hetzner.Action{},
 		unavailable: map[string]bool{},
 	}
 	for _, n := range []string{"cpx11", "cpx21", "cpx31", "cx11", "cx21", "cx31"} {
@@ -50,7 +50,7 @@ func (f *Fake) AddServer(s *hetzner.Server) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if s.ID == 0 {
-		s.ID = len(f.servers) + 1
+		s.ID = int64(len(f.servers) + 1)
 	}
 	f.servers[s.ID] = s
 }
@@ -84,7 +84,7 @@ func (f *Fake) ShutdownCount() int {
 
 // ---- hetzner.API ----
 
-func (f *Fake) GetServer(_ context.Context, id int) (*hetzner.Server, error) {
+func (f *Fake) GetServer(_ context.Context, id int64) (*hetzner.Server, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	s, ok := f.servers[id]
@@ -159,7 +159,7 @@ func (f *Fake) GetServerType(_ context.Context, name string) (*hetzner.ServerTyp
 	return &out, nil
 }
 
-func (f *Fake) GetAction(_ context.Context, id int) (*hetzner.Action, error) {
+func (f *Fake) GetAction(_ context.Context, id int64) (*hetzner.Action, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	a, ok := f.actions[id]

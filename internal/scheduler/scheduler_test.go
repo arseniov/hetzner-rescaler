@@ -138,7 +138,7 @@ func TestScheduler_WritesSchedulerTickOnIdleAutoPromote(t *testing.T) {
 	srv := seedSchedulerTestServer(t, st)
 
 	api := hcloudmock.New()
-	api.AddServer(&hetzner.Server{ID: srv.HCloudServerID, Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx31"}})
+	api.AddServer(&hetzner.Server{ID: int64(srv.HCloudServerID), Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx31"}})
 
 	clk := &recordingClock{t: time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)}
 	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
@@ -179,7 +179,7 @@ func TestScheduler_DebouncesTickHeartbeat(t *testing.T) {
 	srv := seedSchedulerTestServer(t, st)
 
 	api := hcloudmock.New()
-	api.AddServer(&hetzner.Server{ID: srv.HCloudServerID, Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx31"}})
+	api.AddServer(&hetzner.Server{ID: int64(srv.HCloudServerID), Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx31"}})
 
 	clk := &recordingClock{t: time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)}
 	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
@@ -212,7 +212,7 @@ func TestScheduler_WritesTickOnLockContention(t *testing.T) {
 	srv := seedSchedulerTestServer(t, st)
 
 	api := hcloudmock.New()
-	api.AddServer(&hetzner.Server{ID: srv.HCloudServerID, Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx11"}})
+	api.AddServer(&hetzner.Server{ID: int64(srv.HCloudServerID), Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx11"}})
 
 	clk := &recordingClock{t: time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)}
 	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
@@ -252,7 +252,7 @@ func TestScheduler_WritesTickOnNoWindows(t *testing.T) {
 	})
 
 	api := hcloudmock.New()
-	api.AddServer(&hetzner.Server{ID: srv.HCloudServerID, Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx11"}})
+	api.AddServer(&hetzner.Server{ID: int64(srv.HCloudServerID), Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx11"}})
 
 	clk := &recordingClock{t: time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)}
 	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)

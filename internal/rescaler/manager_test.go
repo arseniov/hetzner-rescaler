@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hetznercloud/hcloud-go/hcloud"
+	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"github.com/jonamat/hetzner-rescaler/internal/hcloudmock"
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 	"github.com/jonamat/hetzner-rescaler/internal/store"
@@ -178,7 +178,7 @@ func TestSubmit_InsertsPendingRowAndReturnsID(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 	mock := hcloudmock.New()
-	mock.AddServer(&hetzner.Server{ID: int(srv.HCloudServerID), ServerType: &hetzner.ServerType{Name: "cpx11"}})
+	mock.AddServer(&hetzner.Server{ID: int64(srv.HCloudServerID), ServerType: &hetzner.ServerType{Name: "cpx11"}})
 	m.SetAPIResolver(func(ctx context.Context, projectID int64) (hetzner.API, error) {
 		return mock, nil
 	})
@@ -238,7 +238,7 @@ func TestRunRescale_HappyPathWritesTerminalWithReconciledToType(t *testing.T) {
 
 	mock := hcloudmock.New()
 	mock.AddServer(&hetzner.Server{
-		ID: srv.HCloudServerID, Name: srv.Name,
+		ID: int64(srv.HCloudServerID), Name: srv.Name,
 		ServerType: &hetzner.ServerType{Name: "cpx11"},
 	})
 
@@ -306,7 +306,7 @@ func TestRunRescale_FailureWritesFailedTerminal(t *testing.T) {
 
 	mock := hcloudmock.New()
 	mock.AddServer(&hetzner.Server{
-		ID: srv.HCloudServerID, Name: srv.Name,
+		ID: int64(srv.HCloudServerID), Name: srv.Name,
 		ServerType: &hetzner.ServerType{Name: "cpx11"},
 	})
 	mock.SetChangeTypeOverride(func(target *hetzner.ServerType) error {
@@ -357,7 +357,7 @@ func TestRunRescale_FailureWritesFailedTerminal(t *testing.T) {
 
 type panicAPI struct{ hetzner.API }
 
-func (panicAPI) GetServer(ctx context.Context, id int) (*hetzner.Server, error) {
+func (panicAPI) GetServer(ctx context.Context, id int64) (*hetzner.Server, error) {
 	// Submit calls GetServer first; returning a valid server here lets Submit
 	// succeed so the goroutine is actually spawned. The panic lives in
 	// ShutdownServer — the first API call the goroutine's runRescale path
@@ -461,7 +461,7 @@ func TestShutdown_CancelsInflightJob(t *testing.T) {
 
 type blockingAPI struct{ hetzner.API }
 
-func (b *blockingAPI) GetServer(ctx context.Context, id int) (*hetzner.Server, error) {
+func (b *blockingAPI) GetServer(ctx context.Context, id int64) (*hetzner.Server, error) {
 	// Status: ServerStatusRunning so RescaleWithHook hits the shutdown branch
 	// (calling our ShutdownServer), then waits in waitAction's blocking GetAction.
 	return &hetzner.Server{ID: id, Status: hcloud.ServerStatusRunning, ServerType: &hetzner.ServerType{Name: "cpx11"}}, nil
@@ -471,7 +471,7 @@ func (b *blockingAPI) ShutdownServer(ctx context.Context, srv *hetzner.Server) (
 	return &hetzner.Action{ID: 1, Status: hcloud.ActionStatusRunning, Command: "shutdown"}, nil
 }
 
-func (b *blockingAPI) GetAction(ctx context.Context, id int) (*hetzner.Action, error) {
+func (b *blockingAPI) GetAction(ctx context.Context, id int64) (*hetzner.Action, error) {
 	<-ctx.Done()
 	return nil, ctx.Err()
 }

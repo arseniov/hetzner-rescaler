@@ -8,13 +8,13 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/hetznercloud/hcloud-go/hcloud"
+	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 )
 
 // API is the small set of Hetzner operations the engine needs.
 type API interface {
 	// Server
-	GetServer(ctx context.Context, id int) (*Server, error)
+	GetServer(ctx context.Context, id int64) (*Server, error)
 	ListServers(ctx context.Context) ([]*Server, error)
 	ShutdownServer(ctx context.Context, srv *Server) (*Action, error)
 	ChangeServerType(ctx context.Context, srv *Server, target *ServerType) (*Action, error)
@@ -25,7 +25,7 @@ type API interface {
 	GetServerType(ctx context.Context, name string) (*ServerType, error)
 
 	// Action
-	GetAction(ctx context.Context, id int) (*Action, error)
+	GetAction(ctx context.Context, id int64) (*Action, error)
 }
 
 // realAPI wraps *hcloud.Client.
@@ -41,7 +41,7 @@ func NewClient(token string) (API, error) {
 	return &realAPI{c: hcloud.NewClient(hcloud.WithToken(token))}, nil
 }
 
-func (a *realAPI) GetServer(ctx context.Context, id int) (*Server, error) {
+func (a *realAPI) GetServer(ctx context.Context, id int64) (*Server, error) {
 	s, _, err := a.c.Server.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("hetzner: get server: %w", err)
@@ -106,7 +106,7 @@ func (a *realAPI) GetServerType(ctx context.Context, name string) (*ServerType, 
 	return t, nil
 }
 
-func (a *realAPI) GetAction(ctx context.Context, id int) (*Action, error) {
+func (a *realAPI) GetAction(ctx context.Context, id int64) (*Action, error) {
 	act, _, err := a.c.Action.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("hetzner: get action: %w", err)

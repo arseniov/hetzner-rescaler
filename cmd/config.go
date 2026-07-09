@@ -181,7 +181,7 @@ func addServerFlow(st *store.Store, key []byte) error {
 	}
 
 	srv, err := st.CreateServer(proj.ID, store.Server{
-		HCloudServerID: hsrv.ID,
+		HCloudServerID: int(hsrv.ID),
 		Name:           hsrv.Name,
 		BaseServerType: baseName,
 		TopServerType:  topName,
