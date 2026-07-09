@@ -1,11 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
 
+	"github.com/hetznercloud/hcloud-go/v2/hcloud"
+	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 	"github.com/jonamat/hetzner-rescaler/internal/store"
 )
 
@@ -163,5 +166,32 @@ func TestMetricsRequiresAuth(t *testing.T) {
 	rr := recorder(t, h, req)
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("want 401, got %d", rr.Code)
+	}
+}
+
+// TestPricingMap_PopulatesFromLiveTypes verifies that pricingMap pulls
+// the per-location EUR price from the live Hetzner stub when the
+// requested location has a matching pricing entry.
+func TestPricingMap_PopulatesFromLiveTypes(t *testing.T) {
+	deps, _ := newTestDeps(t)
+	stub := &fakeHetzner{
+		types: []*hetzner.ServerType{
+			{
+				Name: "cx11",
+				Locations: []hcloud.ServerTypeLocation{{Location: &hcloud.Location{Name: "fsn1"}, Available: true}},
+				Pricings: []hcloud.ServerTypeLocationPricing{
+					{Location: &hcloud.Location{Name: "fsn1"}, Monthly: hcloud.Price{Currency: "EUR", Gross: "3.89"}},
+				},
+			},
+		},
+	}
+	deps.APIFor = func(projectID int64) (hetzner.API, error) { return stub, nil }
+	if _, err := deps.Store.CreateProject("p1", []byte("tok"), []byte("nonce12byts")); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	pm := deps.pricingMap(context.Background(), "fsn1")
+	if pm["cx11"] <= 0 {
+		t.Fatalf("cx11 price = %v, want >0", pm["cx11"])
 	}
 }

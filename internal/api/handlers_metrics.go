@@ -160,9 +160,13 @@ func metricsHandler(events EventReader, servers ServerLister, projects ProjectLi
 }
 
 // (d Deps) handleMetrics is the production-side thin wrapper that wires
-// the live *store.Store and live pricing into metricsHandler.
+// the live *store.Store and live pricing into metricsHandler. The
+// pricing map is per-location (Hetzner prices are per-DC) but the
+// metrics chart itself is project-wide, so we pick a single default
+// location ("fsn1") for the price source. A future enhancement could
+// weight by hours-at-location; for now the EUR total is an estimate.
 func (d Deps) handleMetrics(w http.ResponseWriter, r *http.Request) {
-	pricing := d.pricingMap(r.Context())
+	pricing := d.pricingMap(r.Context(), "fsn1")
 	metricsHandler(d.Store, d.Store, d.Store, pricing).ServeHTTP(w, r)
 }
 
@@ -424,6 +428,11 @@ func successRateByServer(events []*store.Event, servers []*store.Server) []Succe
 // empty store, missing/invalid Hetzner token, network blip — it falls
 // back to fixedPricingMap() so the chart still renders.
 //
+// The location argument scopes the live lookup to that datacenter;
+// type availability and per-month EUR price are both per-location in
+// the Hetzner API. The metrics handler currently calls this with a
+// single default location ("fsn1") — see handleMetrics for why.
+//
 // Fallback semantics: the returned map is always populated with
 // at minimum the "__default__" key so computeCostEUR's "unknown
 // type" branch keeps working. Types with a live price override the
@@ -431,9 +440,9 @@ func successRateByServer(events []*store.Event, servers []*store.Server) []Succe
 // Hetzner API doesn't return any longer) keep their hard-coded price
 // if one is known, else fall through to "__default__" at compute
 // time.
-func (d Deps) pricingMap(ctx context.Context) map[string]float64 {
+func (d Deps) pricingMap(ctx context.Context, location string) map[string]float64 {
 	out := fixedPricingMap()
-	types, err := d.serverTypes(ctx)
+	types, err := d.serverTypes(ctx, location)
 	if err != nil || len(types) == 0 {
 		return out
 	}
