@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"context"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -10,6 +11,12 @@ import (
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 	"github.com/jonamat/hetzner-rescaler/internal/store"
 )
+
+func stubResolver(api hetzner.API) func(context.Context, int64) (hetzner.API, error) {
+	return func(_ context.Context, _ int64) (hetzner.API, error) {
+		return api, nil
+	}
+}
 
 type recordingClock struct {
 	mu sync.Mutex
@@ -55,7 +62,7 @@ func TestSchedulerTriggersRescaleOnWindowEntry(t *testing.T) {
 
 	clk := &recordingClock{t: time.Date(2026, 6, 29, 0, 30, 0, 0, time.UTC)}
 
-	sched := New(st, api, clk, 50*time.Millisecond)
+	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
 	sched.Add(srv.ID)
 
 	done := make(chan struct{})
@@ -79,7 +86,7 @@ func TestSchedulerAutoPromoteTriggersRescale(t *testing.T) {
 
 	clk := &recordingClock{t: time.Date(2026, 6, 29, 12, 0, 0, 0, time.UTC)}
 
-	sched := New(st, api, clk, 50*time.Millisecond)
+	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
 	sched.Add(srv.ID)
 
 	// Set promote_state and tick manually
@@ -117,7 +124,7 @@ func seedSchedulerTestServer(t *testing.T, st *store.Store) *store.Server {
 		HCloudServerID: 1, Name: "w", Label: "w",
 		BaseServerType: "cpx11", TopServerType: "cpx31",
 		FallbackChain: []string{"cpx31", "cpx11"},
-		Mode: "auto_promote", Timezone: "UTC",
+		Mode:          "auto_promote", Timezone: "UTC",
 	})
 	if err != nil {
 		t.Fatalf("CreateServer: %v", err)
@@ -133,7 +140,7 @@ func TestScheduler_WritesSchedulerTickOnIdleAutoPromote(t *testing.T) {
 	api.AddServer(&hetzner.Server{ID: srv.HCloudServerID, Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx31"}})
 
 	clk := &recordingClock{t: time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)}
-	sched := New(st, api, clk, 50*time.Millisecond)
+	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
 	sched.Add(srv.ID)
 
 	// Server at top + promote_requested → tick finds current == top → "ok_idle".
@@ -174,7 +181,7 @@ func TestScheduler_DebouncesTickHeartbeat(t *testing.T) {
 	api.AddServer(&hetzner.Server{ID: srv.HCloudServerID, Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx31"}})
 
 	clk := &recordingClock{t: time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)}
-	sched := New(st, api, clk, 50*time.Millisecond)
+	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
 	sched.Add(srv.ID)
 
 	ps := "promote_requested"
@@ -207,7 +214,7 @@ func TestScheduler_WritesTickOnLockContention(t *testing.T) {
 	api.AddServer(&hetzner.Server{ID: srv.HCloudServerID, Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx11"}})
 
 	clk := &recordingClock{t: time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)}
-	sched := New(st, api, clk, 50*time.Millisecond)
+	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
 	sched.Add(srv.ID)
 
 	// Hold the action lock so AcquireAction returns false.
@@ -247,7 +254,7 @@ func TestScheduler_WritesTickOnNoWindows(t *testing.T) {
 	api.AddServer(&hetzner.Server{ID: srv.HCloudServerID, Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx11"}})
 
 	clk := &recordingClock{t: time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)}
-	sched := New(st, api, clk, 50*time.Millisecond)
+	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
 	sched.Add(srv.ID)
 
 	sched.tick(srv.ID)

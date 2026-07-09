@@ -32,36 +32,39 @@ const (
 
 // Scheduler holds the running goroutines for all registered servers.
 type Scheduler struct {
-	store     *store.Store
-	api       map[int64]hetzner.API // per-project, but we use a single API for the test
-	clock     Clock
-	tickEvery time.Duration
+	store      *store.Store
+	apiResolve func(ctx context.Context, projectID int64) (hetzner.API, error)
+	clock      Clock
+	tickEvery  time.Duration
 
-	mu     sync.Mutex
-	added  map[int64]struct{}
-	stopCh chan struct{}
-	wg     sync.WaitGroup
-	log    *log.Logger
+	mu        sync.Mutex
+	perServer map[int64]chan struct{} // per-server stop channel; closed by Remove or Stop
+	added     map[int64]struct{}
+	stopCh    chan struct{}
+	wg        sync.WaitGroup
+	log       *log.Logger
 }
 
 // New constructs a Scheduler. `tickEvery` is the interval between
 // evaluations; 30s in production.
-func New(st *store.Store, api hetzner.API, clk Clock, tickEvery time.Duration) *Scheduler {
+func New(st *store.Store, apiResolve func(ctx context.Context, projectID int64) (hetzner.API, error), clk Clock, tickEvery time.Duration) *Scheduler {
 	if clk == nil {
 		clk = RealClock{}
 	}
 	return &Scheduler{
-		store:     st,
-		api:       map[int64]hetzner.API{0: api},
-		clock:     clk,
-		tickEvery: tickEvery,
-		added:     map[int64]struct{}{},
-		stopCh:    make(chan struct{}),
-		log:       log.New(log.Writer(), "▶ scheduler ", log.LstdFlags),
+		store:      st,
+		apiResolve: apiResolve,
+		clock:      clk,
+		tickEvery:  tickEvery,
+		added:      map[int64]struct{}{},
+		perServer:  map[int64]chan struct{}{},
+		stopCh:     make(chan struct{}),
+		log:        log.New(log.Writer(), "▶ scheduler ", log.LstdFlags),
 	}
 }
 
-// Add registers a server to be scheduled.
+// Add registers a server to be scheduled. Idempotent: re-adding an
+// already-registered server is a no-op.
 func (s *Scheduler) Add(serverID int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -69,8 +72,26 @@ func (s *Scheduler) Add(serverID int64) {
 		return
 	}
 	s.added[serverID] = struct{}{}
+	stop := make(chan struct{})
+	s.perServer[serverID] = stop
 	s.wg.Add(1)
-	go s.runOne(serverID)
+	go s.runOne(serverID, stop)
+}
+
+// Remove stops the per-server goroutine registered for serverID. Idempotent:
+// removing a server that was never added (or has already been removed) is
+// a no-op.
+func (s *Scheduler) Remove(serverID int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.added[serverID]; !ok {
+		return
+	}
+	delete(s.added, serverID)
+	if stop, ok := s.perServer[serverID]; ok {
+		close(stop)
+		delete(s.perServer, serverID)
+	}
 }
 
 // Run blocks until Stop is called.
@@ -78,19 +99,35 @@ func (s *Scheduler) Run() {
 	<-s.stopCh
 }
 
-// Stop signals all goroutines to exit and waits for them.
+// Stop signals all goroutines to exit and waits for them. Closes every
+// per-server stop channel (drives Add'd goroutines to exit) before
+// closing the whole-process stopCh.
 func (s *Scheduler) Stop() {
-	close(s.stopCh)
+	s.mu.Lock()
+	for id, stop := range s.perServer {
+		close(stop)
+		delete(s.perServer, id)
+	}
+	s.mu.Unlock()
+	// Idempotent guard: don't re-close stopCh on a second Stop.
+	s.mu.Lock()
+	select {
+	case <-s.stopCh:
+	default:
+		close(s.stopCh)
+	}
+	s.mu.Unlock()
 	s.wg.Wait()
 }
 
-func (s *Scheduler) runOne(serverID int64) {
+func (s *Scheduler) runOne(serverID int64, stop <-chan struct{}) {
 	defer s.wg.Done()
 	t := time.NewTicker(s.tickEvery)
 	defer t.Stop()
-
 	for {
 		select {
+		case <-stop:
+			return
 		case <-s.stopCh:
 			return
 		case <-t.C:
@@ -106,7 +143,11 @@ func (s *Scheduler) tick(serverID int64) {
 		s.log.Printf("server %d: load failed: %v", serverID, err)
 		return
 	}
-	api := s.apiFor(srv.ProjectID)
+	api, err := s.apiResolve(context.Background(), srv.ProjectID)
+	if err != nil {
+		s.log.Printf("server %d: resolve api for project %d: %v", serverID, srv.ProjectID, err)
+		return
+	}
 
 	switch srv.Mode {
 	case "scheduled":
@@ -116,15 +157,6 @@ func (s *Scheduler) tick(serverID int64) {
 	case "manual":
 		// no automatic rescales; housekeeping only
 	}
-}
-
-func (s *Scheduler) apiFor(projectID int64) hetzner.API {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if a, ok := s.api[projectID]; ok {
-		return a
-	}
-	return s.api[0]
 }
 
 func (s *Scheduler) tickScheduled(srv *store.Server, api hetzner.API) {
