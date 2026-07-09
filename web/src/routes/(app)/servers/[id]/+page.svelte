@@ -209,6 +209,7 @@
             mode={s.mode}
             promoteState={s.promote_state ?? null}
             lastTickAt={(events.find((e) => e.kind === 'scheduler_tick')?.started_at) ?? null}
+            timezone={s.timezone}
             windows={windows.map((w) => ({
               days_of_week: w.days_of_week,
               start_time: w.start_time,

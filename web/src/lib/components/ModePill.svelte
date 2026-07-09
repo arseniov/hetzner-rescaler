@@ -8,6 +8,7 @@
     promoteState: string | null;
     lastTickAt: string | null;
     windows: WindowSpec[];
+    timezone: string;
     now?: Date;
     class?: string;
   };
@@ -17,6 +18,7 @@
     promoteState,
     lastTickAt,
     windows,
+    timezone,
     now = $bindable(new Date()),
     class: className = '',
   }: Props = $props();
@@ -42,7 +44,7 @@
       return 'requested · waiting for next tick';
     }
     if (mode === 'scheduled') {
-      const r = nextWindow(windows, 'UTC', now);
+      const r = nextWindow(windows, timezone, now);
       if (r.kind === 'none') return m.mode_pill_scheduled_none();
       const when = new Intl.DateTimeFormat('en-US', {
         weekday: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
