@@ -258,3 +258,43 @@ func TestEventListPendingFinishedAtZero(t *testing.T) {
 		t.Fatalf("FinishedAt = %v, want zero (pending)", events[0].FinishedAt)
 	}
 }
+
+func TestLastEventOfKind(t *testing.T) {
+	s, err := OpenTemp()
+	if err != nil {
+		t.Fatalf("OpenTemp: %v", err)
+	}
+	defer s.Close()
+	_, srvID := seedProjectAndServer(t, s)
+
+	// Empty: returns zero-value Event, nil error.
+	got, err := s.LastEventOfKind(srvID, "scheduler_tick")
+	if err != nil {
+		t.Fatalf("empty: %v", err)
+	}
+	if got.ID != 0 || !got.StartedAt.IsZero() {
+		t.Fatalf("empty: got %+v, want zero", got)
+	}
+
+	// Append two events; expect the most-recent match returned (by id).
+	_, _ = s.AppendEvent(Event{ServerID: srvID, Kind: "scheduler_tick", StartedAt: time.Unix(100, 0).UTC(), OK: true, TriggeredBy: "test", Error: "ok_idle"})
+	_, _ = s.AppendEvent(Event{ServerID: srvID, Kind: "rescale_up", StartedAt: time.Unix(200, 0).UTC(), OK: true, TriggeredBy: "test"})
+	_, _ = s.AppendEvent(Event{ServerID: srvID, Kind: "scheduler_tick", StartedAt: time.Unix(300, 0).UTC(), OK: true, TriggeredBy: "test", Error: "no_windows"})
+
+	got, err = s.LastEventOfKind(srvID, "scheduler_tick")
+	if err != nil {
+		t.Fatalf("after appends: %v", err)
+	}
+	if got.Error != "no_windows" {
+		t.Fatalf("got Error = %q, want no_windows (most recent match)", got.Error)
+	}
+	if !got.StartedAt.Equal(time.Unix(300, 0).UTC()) {
+		t.Fatalf("got StartedAt = %v, want 300", got.StartedAt)
+	}
+
+	// Kind filter excludes other kinds.
+	got2, _ := s.LastEventOfKind(srvID, "rescale_up")
+	if got2.Error != "" || got2.Kind != "rescale_up" {
+		t.Fatalf("kind filter: got %+v", got2)
+	}
+}

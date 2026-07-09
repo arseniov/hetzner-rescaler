@@ -39,12 +39,12 @@ func TestMigrationAddsPhaseColumn(t *testing.T) {
 	}
 }
 
-func TestSchemaVersionIs2(t *testing.T) {
+func TestSchemaVersionIs3(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	s, _ := Open(dbPath)
 	defer s.Close()
-	if v := readSchemaVersion(t, s); v != 2 {
-		t.Fatalf("schema version = %d, want 2", v)
+	if v := readSchemaVersion(t, s); v != 3 {
+		t.Fatalf("schema version = %d, want 3", v)
 	}
 }
 

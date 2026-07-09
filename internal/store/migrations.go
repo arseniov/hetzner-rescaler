@@ -8,6 +8,7 @@ import "fmt"
 var migrations = []func(*Store) error{
 	migration001_initial,
 	migration002_add_phase,
+	migration003_events_kind_index,
 }
 
 func (s *Store) migrate() error {
@@ -115,6 +116,19 @@ func migration001_initial(s *Store) error {
 func migration002_add_phase(s *Store) error {
 	if _, err := s.db.Exec(`ALTER TABLE events ADD COLUMN phase TEXT`); err != nil {
 		return fmt.Errorf("add phase column: %w", err)
+	}
+	return nil
+}
+
+func migration003_events_kind_index(s *Store) error {
+	// Composite index supports the hot-path LastEventOfKind query
+	// (find most recent event of a kind for a server) and the existing
+	// server-scoped lookups. id is last so the planner can use the index
+	// to satisfy `ORDER BY id DESC LIMIT 1` by walking the index backwards.
+	if _, err := s.db.Exec(
+		`CREATE INDEX IF NOT EXISTS idx_events_server_kind_id ON events(server_id, kind, id)`,
+	); err != nil {
+		return fmt.Errorf("create idx_events_server_kind_id: %w", err)
 	}
 	return nil
 }
