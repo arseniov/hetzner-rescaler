@@ -110,8 +110,11 @@ func (f *Fake) SetLocations(name, location string, available bool) {
 }
 
 // SetGetServerTypeError makes GetServerType return the given error for
-// the named type. Other types still succeed. Used by tests that need to
-// exercise the API-error path of IsTypeAvailable.
+// the named type. The error is one-shot: only the NEXT call returns it,
+// then the entry is cleared. This mirrors the "transient" semantics a
+// test wants to exercise (one bad response, then the API recovers),
+// and lets a single test cover both IsTypeAvailable's error path
+// and the inner Rescale call succeeding on the retry.
 func (f *Fake) SetGetServerTypeError(name string, err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -201,6 +204,9 @@ func (f *Fake) GetServerType(_ context.Context, name string) (*hetzner.ServerTyp
 	}
 	f.getServerTypeCounts[name]++
 	if err, ok := f.getServerTypeErrors[name]; ok {
+		// One-shot: clear after the next call returns the error so a
+		// "transient" failure doesn't permanently break the type.
+		delete(f.getServerTypeErrors, name)
 		return nil, err
 	}
 	t, ok := f.serverTypes[name]

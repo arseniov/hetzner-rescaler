@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"time"
 
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
+	"github.com/jonamat/hetzner-rescaler/internal/store"
 )
 
 // ErrAllUnavailable is returned by RescaleWithFallback when every type in
@@ -25,20 +28,81 @@ var ErrAllUnavailable = errors.New("rescaler: all fallback targets unavailable")
 // on a non-unavailable error), the safety-net poweron below
 // recovers the server. Operators should never have to chase a
 // production server that was left off after a "failed rescale".
+//
+// This is the no-event-emission wrapper used by cmd/try.go. The scheduler
+// and any future caller that wants rescale_skipped events in the store
+// should call RescaleWithFallbackWithHook directly with a non-nil store.
 func RescaleWithFallback(ctx context.Context, api hetzner.API, srv *hetzner.Server, targetType string, chain []string) (string, error) {
-	return RescaleWithFallbackWithHook(ctx, api, srv, targetType, chain, nil)
+	return RescaleWithFallbackWithHook(ctx, api, srv, targetType, chain, nil, "", nil)
 }
 
 // RescaleWithFallbackWithHook is RescaleWithFallback with a phase hook
-// passed down to every Rescale invocation. Same return contract.
+// AND a per-entry availability pre-check.
+//
+// For each entry in chain, the loop first calls IsTypeAvailable:
+//   - unavailable: emit a rescale_skipped event (if st != nil) and continue.
+//   - check error: log a warning and fall through (fail open — see Risks).
+//   - available:    run RescaleWithHook as today.
 //
 // The chain is walked via RescaleWithHook, which does NOT auto-poweron
 // on failure (the wrapper's safety net handles that). This split
 // keeps the chain from paying a shutdown/poweron cycle per iteration
 // when every entry is unavailable — only the final attempt gets the
 // recovery poweron.
-func RescaleWithFallbackWithHook(ctx context.Context, api hetzner.API, srv *hetzner.Server, targetType string, chain []string, phaseHook func(string)) (string, error) {
+//
+// `st` may be nil; in that case no rescale_skipped events are emitted
+// (the wrapper uses this to keep cmd/try.go as a no-event one-off).
+// `triggeredBy` is recorded on the emitted events; pass "" when st is nil.
+func RescaleWithFallbackWithHook(
+	ctx context.Context,
+	api hetzner.API,
+	srv *hetzner.Server,
+	targetType string,
+	chain []string,
+	st *store.Store,
+	triggeredBy string,
+	phaseHook func(string),
+) (string, error) {
 	for _, t := range chain {
+		// IsTypeAvailable short-circuits to (false, nil) when the
+		// server has no Datacenter/Location. That's a "we don't know"
+		// signal, not a confirmed-unavailable — so we fail open
+		// here too. Otherwise a freshly-observed server whose first
+		// reconciliation hasn't completed would never rescale.
+		if srv == nil || srv.Datacenter == nil || srv.Datacenter.Location == nil {
+			err := RescaleWithHook(ctx, api, srv, t, phaseHook)
+			if err == nil {
+				return t, nil
+			}
+			if hetzner.IsUnavailable(err) {
+				continue
+			}
+			ensurePoweredOn(ctx, api, srv)
+			return "", fmt.Errorf("rescaler: chain halted at %q: %w", t, err)
+		}
+		if avail, err := IsTypeAvailable(ctx, api, srv, t); err != nil {
+			// Fail open: a transient API error must not block valid rescales.
+			// The next tick re-checks.
+			log.Printf("rescaler: server %d: pre-check %q: %v (proceeding)", srv.ID, t, err)
+		} else if !avail {
+			if st != nil {
+				now := time.Now().UTC()
+				loc := srv.Datacenter.Location.Name
+				_, _ = st.AppendEvent(store.Event{
+					ServerID:    srv.ID,
+					Kind:        "rescale_skipped",
+					FromType:    t,
+					ToType:      "",
+					StartedAt:   now,
+					FinishedAt:  now,
+					OK:          false,
+					Error:       fmt.Sprintf("unavailable in %s", loc),
+					TriggeredBy: triggeredBy,
+					Phase:       "pre_check",
+				})
+			}
+			continue
+		}
 		err := RescaleWithHook(ctx, api, srv, t, phaseHook)
 		if err == nil {
 			return t, nil
