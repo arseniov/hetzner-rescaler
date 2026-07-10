@@ -4,6 +4,7 @@
   import { ArrowLeft, Plus, Trash2 } from 'lucide-svelte';
   import { m } from '$lib/paraglide/messages.js';
   import { api, ApiError } from '$lib/api';
+  import { serverTypes } from '$lib/stores/serverTypes.svelte';
   import type { Server, Window_ as Window } from '$lib/types';
   import Button from '$lib/components/ui/button.svelte';
   import Input from '$lib/components/ui/input.svelte';
@@ -64,6 +65,17 @@
   async function refresh() {
     try {
       server = await api.getServer(serverId);
+      // Belt-and-braces catalog trigger: alongside the $effect inside
+      // ServerTypeSelect (which already watches `location={server?.location}`
+      // and re-fires when the prop flips undefined → "fsn1"), we also
+      // call serverTypes.load here the moment we know the location.
+      // This guarantees the per-location /api/server-types?location=X
+      // call fires on every navigation to the windows tab, independent
+      // of any subtle Svelte 5 prop-tracking quirk. The store dedupes
+      // overlapping calls and caches results for 5 minutes.
+      if (server.location) {
+        serverTypes.load(server.location).catch(() => { /* loadError is set on the store */ });
+      }
       windows = await api.listWindows(serverId);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);

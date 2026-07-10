@@ -4,6 +4,7 @@
   import { goto } from '$app/navigation';
   import { m } from '$lib/paraglide/messages.js';
   import { api, ApiError } from '$lib/api';
+  import { serverTypes } from '$lib/stores/serverTypes.svelte';
   import type { Server } from '$lib/types';
   import Button from '$lib/components/ui/button.svelte';
   import Input from '$lib/components/ui/input.svelte';
@@ -34,6 +35,19 @@
   onMount(async () => {
     try {
       server = await api.getServer(serverId);
+      // Fire the per-location catalog load AS SOON AS the server is
+      // known. This is a deliberate belt-and-braces trigger alongside
+      // the $effect inside ServerTypeSelect / ServerTypeMultiSelect:
+      // those effects already watch `location={server?.location}` and
+      // re-fire when the prop flips from undefined → "fsn1", but
+      // emitting the load here guarantees the network call happens on
+      // every navigation to the edit page, independent of any subtle
+      // Svelte 5 prop-tracking quirk during SSR hydration. The store
+      // dedupes overlapping calls via its in-flight map and the TTL
+      // cache keeps repeat visits cheap.
+      if (server.location) {
+        serverTypes.load(server.location).catch(() => { /* loadError is set on the store */ });
+      }
       form = {
         name: server.name,
         label: server.label,
