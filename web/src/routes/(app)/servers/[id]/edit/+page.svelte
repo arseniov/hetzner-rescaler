@@ -56,6 +56,37 @@
   // register-server dialog (see projects/[id]/+page.svelte).
   const FALLBACK_LOCATION = 'fsn1';
 
+  const FALLBACK_TIMEZONES = [
+    'UTC',
+    'Europe/Rome',
+    'Europe/London',
+    'Europe/Berlin',
+    'America/New_York',
+    'America/Los_Angeles',
+    'Asia/Tokyo',
+    'Australia/Sydney'
+  ];
+
+  function uniqueSortedTimezones(values: string[]): string[] {
+    const unique: string[] = [];
+    for (const value of values) {
+      if (value && !unique.includes(value)) unique.push(value);
+    }
+    return unique.sort((a, b) => a.localeCompare(b));
+  }
+
+  function getSupportedTimezones(): string[] {
+    const intl = Intl as typeof Intl & {
+      supportedValuesOf?: (key: 'timeZone') => string[];
+    };
+    const zones = intl.supportedValuesOf?.('timeZone') ?? FALLBACK_TIMEZONES;
+    return uniqueSortedTimezones(['UTC', ...zones]);
+  }
+
+  const supportedTimezones = getSupportedTimezones();
+
+  let timezoneOptions = $derived(uniqueSortedTimezones([...supportedTimezones, form.timezone]));
+
   onMount(async () => {
     // Fire the per-location catalog load IMMEDIATELY on mount, BEFORE
     // awaiting the server. This guarantees the network request goes
@@ -291,12 +322,16 @@
 
     <div class="flex flex-col gap-1.5">
       <Label for="f-tz">{m.server_edit_field_timezone()}</Label>
-      <Input
+      <select
         id="f-tz"
         bind:value={form.timezone}
         required
-        placeholder={m.server_edit_field_timezone_placeholder()}
-      />
+        class="flex h-9 rounded-md border border-border bg-input px-3 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+      >
+        {#each timezoneOptions as timezone (timezone)}
+          <option value={timezone}>{timezone}</option>
+        {/each}
+      </select>
     </div>
 
     <div class="flex gap-2 border-t border-border pt-4">

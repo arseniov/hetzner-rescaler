@@ -44,7 +44,8 @@ vi.mock('$lib/api', () => {
       getServer: vi.fn().mockImplementation(() => Promise.resolve(apiMockState.server)),
       updateServer: vi.fn(),
       // serverTypes.load() resolves through api.serverTypes().
-      serverTypes: vi.fn().mockResolvedValue([])
+      serverTypes: vi.fn().mockResolvedValue([]),
+      listWindows: vi.fn().mockResolvedValue([])
     },
     ApiError: class ApiError extends Error {
       constructor(public status: number, message: string) {
@@ -207,5 +208,36 @@ describe('edit page — parent-level serverTypes.load trigger', () => {
     expect(args.filter((a) => a === 'fsn1').length).toBe(1); // the unconditional pre-await call
     expect(args.filter((a) => a === 'nbg1').length).toBeGreaterThanOrEqual(1); // the post-await refire
     loadSpy.mockRestore();
+  });
+
+  it('renders timezone as a dropdown with IANA timezone choices', async () => {
+    apiMockState.server = {
+      id: 42,
+      project_id: 1,
+      hcloud_server_id: 1,
+      name: 'w',
+      label: 'w',
+      base_server_type: 'cpx11',
+      top_server_type: 'cpx31',
+      fallback_chain: ['cpx21'],
+      mode: 'manual',
+      timezone: 'Europe/Rome',
+      status: 'running',
+      current_type: 'cpx21',
+      location: 'fsn1'
+    };
+
+    const { getByLabelText } = render(EditPage);
+    await tick();
+    await tick();
+    await tick();
+
+    const timezone = getByLabelText(/timezone/i) as HTMLSelectElement;
+    expect(timezone.tagName).toBe('SELECT');
+    expect(timezone.value).toBe('Europe/Rome');
+    const values = Array.from(timezone.options).map((option) => option.value);
+    expect(values).toContain('UTC');
+    expect(values).toContain('Europe/Rome');
+    expect(values).toContain('America/New_York');
   });
 });
