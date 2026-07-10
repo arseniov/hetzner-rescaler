@@ -139,6 +139,8 @@
   "windows_modal_save": "Create",
   "windows_modal_saving": "Creating…",
   "windows_modal_cancel": "Cancel",
+  "windows_edit_modal_title": "Edit window",
+  "windows_edit_modal_save": "Save changes",
   "windows_field_label": "Label",
   "windows_field_days": "Days of week",
   "windows_field_start": "Start time",

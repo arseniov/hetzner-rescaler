@@ -31,6 +31,30 @@
   let newTarget = $state('');
   let newEnabled = $state(true);
 
+  // Edit-window dialog state. Pre-filled from the row that's being
+  // edited (see `openEdit`). The two modals use parallel flat state on
+  // purpose: extracting a shared form component would force a callback
+  // contract for every change handler, and the only place the forms
+  // diverge is the submit handler + saving/disabled wiring — not enough
+  // payoff for the indirection.
+  let openEditModal = $state(false);
+  let editingId = $state<number | null>(null);
+  let editLabel = $state('');
+  let editDays = $state(0b00111110);
+  let editStart = $state('09:00');
+  let editStop = $state('18:00');
+  let editTarget = $state('');
+  let editEnabled = $state(true);
+
+  // When the edit dialog closes via the X button or ESC, we get the
+  // `open` flip without a callback. Watching the state clears the
+  // sentinel `editingId` so the next openEdit re-seeds from scratch.
+  $effect(() => {
+    if (!openEditModal && editingId !== null) {
+      editingId = null;
+    }
+  });
+
   // Pending-deletion state. Two-tap pattern (same as /projects):
   // first tap arms the action; a 3 s timer or cancel disarms.
   let pendingDeleteId = $state<number | null>(null);
@@ -161,6 +185,48 @@
       await refresh();
     } catch (err) {
       error = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  // Seed the edit-modal local state from the row and open the dialog.
+  // Task D wires the row-level button that calls this.
+  function openEdit(w: Window) {
+    editingId = w.id;
+    editLabel = w.label;
+    editDays = w.days_of_week;
+    editStart = w.start_time;
+    editStop = w.stop_time;
+    editTarget = w.target_type;
+    editEnabled = w.enabled;
+    openEditModal = true;
+  }
+
+  function toggleEditDay(d: number) {
+    editDays ^= (1 << d);
+  }
+
+  async function commitEdit(e: SubmitEvent) {
+    e.preventDefault();
+    if (editingId === null) return;
+    saving = true;
+    error = null;
+    try {
+      await api.updateWindow(editingId, {
+        label: editLabel.trim(),
+        days_of_week: editDays,
+        start_time: editStart,
+        stop_time: editStop,
+        target_type: editTarget.trim(),
+        enabled: editEnabled
+      });
+      openEditModal = false;
+      // `editingId` is cleared by the $effect watching `openEditModal`;
+      // calling refresh() with `editingId` still set is harmless.
+      await refresh();
+    } catch (err) {
+      error = err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err);
+    } finally {
+      saving = false;
     }
   }
 
@@ -367,6 +433,75 @@
     </Button>
     <Button variant="primary" type="submit" form="add-window-form" disabled={saving}>
       {saving ? m.windows_modal_saving() : m.windows_modal_save()}
+    </Button>
+  {/snippet}
+</Dialog>
+
+<!--
+  Edit-window dialog. Same body shape as Add (label, start/stop times,
+  target, days, enabled). Pre-filled by `openEdit(w)` from the row;
+  saves through api.updateWindow. The 24h `type="time"` inputs always
+  produce "HH:MM" round-trip from the API, so the same fields can be
+  bound directly without locale conversion on either side.
+-->
+<Dialog bind:open={openEditModal} title={m.windows_edit_modal_title()} size="lg">
+  <form id="edit-window-form" onsubmit={commitEdit} class="space-y-4">
+    <div class="flex flex-col gap-1.5">
+      <Label for="we-label">{m.windows_field_label()}</Label>
+      <Input id="we-label" bind:value={editLabel} required />
+    </div>
+
+    <div class="grid grid-cols-2 gap-3">
+      <div class="flex flex-col gap-1.5">
+        <Label for="we-start">{m.windows_field_start()}</Label>
+        <Input id="we-start" type="time" bind:value={editStart} required />
+      </div>
+      <div class="flex flex-col gap-1.5">
+        <Label for="we-stop">{m.windows_field_stop()}</Label>
+        <Input id="we-stop" type="time" bind:value={editStop} required />
+      </div>
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <Label for="we-target">{m.windows_field_target()}</Label>
+      <ServerTypeSelect id="we-target" bind:value={editTarget} server={server} location={server?.location} required />
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <span class="text-sm font-medium text-foreground">{m.windows_field_days()}</span>
+      <div class="flex gap-1">
+        {#each dayLabels as lbl, i}
+          {@const on = !!(editDays & (1 << i))}
+          <button
+            type="button"
+            onclick={() => toggleEditDay(i)}
+            class="h-8 w-10 rounded-sm font-mono text-xs uppercase tracking-wider transition-colors {on
+              ? 'bg-primary text-primary-foreground border border-primary'
+              : 'border border-border bg-transparent text-muted-foreground hover:text-foreground'}"
+            aria-pressed={on}
+          >
+            {lbl}
+          </button>
+        {/each}
+      </div>
+    </div>
+
+    <label class="flex items-center gap-2 text-sm text-foreground">
+      <input
+        type="checkbox"
+        bind:checked={editEnabled}
+        class="size-4 rounded-sm border border-border bg-input text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      />
+      {m.windows_field_enabled()}
+    </label>
+  </form>
+
+  {#snippet footer()}
+    <Button variant="ghost" onclick={() => (openEditModal = false)} disabled={saving}>
+      {m.windows_modal_cancel()}
+    </Button>
+    <Button variant="primary" type="submit" form="edit-window-form" disabled={saving}>
+      {saving ? m.windows_modal_saving() : m.windows_edit_modal_save()}
     </Button>
   {/snippet}
 </Dialog>
