@@ -273,6 +273,62 @@
     <Alert variant="destructive" class="mb-6">{error}</Alert>
   {/if}
 
+  <!--
+    Weekly agenda — visual preview of enabled windows across the seven
+    days. Each cell shows the windows that fire on that day, with their
+    label, target type, and time window. Empty days show a muted "No
+    active windows" hint. Disabled windows are omitted entirely here
+    (they still appear in the table below, with their on/off state).
+    Layout: a single stack on mobile, a 7-column grid on `lg` so the
+    operator can see "what runs on each day" at a glance.
+  -->
+  <section
+    aria-label={m.windows_agenda_title()}
+    class="mb-6 overflow-hidden rounded-md border border-border bg-card"
+  >
+    <header
+      class="border-b border-border px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
+    >
+      {m.windows_agenda_title()}
+    </header>
+    <div class="grid grid-cols-1 lg:grid-cols-7">
+      {#each dayLabels as dayName, i (dayName)}
+        {@const active = windows.filter(
+          (w) => w.enabled && (w.days_of_week & (1 << i)) !== 0
+        )}
+        <div
+          aria-label="{dayName} agenda"
+          class="flex flex-col gap-1.5 border-t border-border px-4 py-3 first:border-t-0 lg:gap-2 lg:border-l lg:border-t-0 lg:first:border-l-0"
+        >
+          <div class="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+            {dayName}
+          </div>
+          {#if active.length === 0}
+            <p class="font-mono text-xs text-muted-foreground/60">
+              {m.windows_agenda_empty()}
+            </p>
+          {:else}
+            <ul class="space-y-2">
+              {#each active as w (w.id)}
+                <li class="space-y-0.5">
+                  <div class="truncate text-sm font-medium text-foreground">
+                    {w.label}
+                  </div>
+                  <div class="font-mono text-xs text-muted-foreground">
+                    {w.start_time}–{w.stop_time}
+                  </div>
+                  <div class="font-mono text-xs text-foreground">
+                    {w.target_type}
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+      {/each}
+    </div>
+  </section>
+
   <section aria-label="Windows" class="rounded-md border border-border bg-card">
     {#if windows.length === 0}
       <p class="px-4 py-6 text-sm text-muted-foreground">{m.windows_empty()}</p>

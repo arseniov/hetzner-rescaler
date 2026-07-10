@@ -148,6 +148,8 @@
   "windows_field_stop": "Stop time",
   "windows_field_target": "Target server type",
   "windows_field_enabled": "Enabled",
+  "windows_agenda_title": "Weekly agenda",
+  "windows_agenda_empty": "No active windows",
   "events_title": "Events",
   "events_filter_server": "Server",
   "events_filter_server_all": "All servers",
