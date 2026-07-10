@@ -134,6 +134,7 @@
   "windows_enable": "Enable",
   "windows_disable": "Disable",
   "windows_delete": "Delete",
+  "windows_edit": "Edit",
   "windows_delete_confirm": "Delete this window?",
   "windows_modal_title": "New window",
   "windows_modal_save": "Create",

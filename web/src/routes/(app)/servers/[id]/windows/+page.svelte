@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
-  import { ArrowLeft, Plus, Trash2 } from 'lucide-svelte';
+  import { ArrowLeft, Plus, Trash2, Pencil } from 'lucide-svelte';
   import { m } from '$lib/paraglide/messages.js';
   import { api, ApiError } from '$lib/api';
   import { serverTypes } from '$lib/stores/serverTypes.svelte';
@@ -283,7 +283,7 @@
         the wider left edge.
       -->
       <div
-        class="hidden border-b border-border px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground lg:grid lg:grid-cols-[1.5fr_2fr_5rem_5rem_6rem_5rem_7rem] lg:gap-3"
+        class="hidden border-b border-border px-4 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground lg:grid lg:grid-cols-[1.5fr_2fr_5rem_5rem_6rem_5rem_9rem] lg:gap-3"
       >
         <span>{m.windows_col_label()}</span>
         <span>{m.windows_col_days()}</span>
@@ -297,7 +297,7 @@
         {#each windows as w, i (w.id)}
           {@const armed = pendingDeleteId === w.id}
           <li
-            class="flex flex-wrap items-center gap-2 px-4 py-3 text-sm lg:grid lg:grid-cols-[1.5fr_2fr_5rem_5rem_6rem_5rem_7rem] lg:items-center lg:gap-3 {i > 0 ? 'border-t border-border' : ''}"
+            class="flex flex-wrap items-center gap-2 px-4 py-3 text-sm lg:grid lg:grid-cols-[1.5fr_2fr_5rem_5rem_6rem_5rem_9rem] lg:items-center lg:gap-3 {i > 0 ? 'border-t border-border' : ''}"
           >
             <span class="min-w-0 flex-1 truncate font-medium text-foreground lg:flex-none">
               {w.label}
@@ -323,6 +323,19 @@
                 class="font-mono text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
               >
                 {w.enabled ? m.windows_disable() : m.windows_enable()}
+              </button>
+              <!--
+                Edit button. Icon-only in the row; the modal carries the
+                verbose label ("Edit window"). `openEdit(w)` (Task C)
+                seeds the dialog from this row and `commitEdit` saves.
+              -->
+              <button
+                type="button"
+                onclick={() => openEdit(w)}
+                aria-label="{m.windows_edit()} {w.label}"
+                class="inline-flex size-7 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              >
+                <Pencil class="size-3.5" strokeWidth={1.5} aria-hidden="true" />
               </button>
               {#if armed}
                 <button
