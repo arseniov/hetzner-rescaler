@@ -151,4 +151,31 @@ describe('ServerTypeMultiSelect', () => {
     expect(loadSpy).toHaveBeenCalledWith('fsn1');
     loadSpy.mockRestore();
   });
+
+  it('loads the catalog after location transitions undefined → "fsn1"', async () => {
+    // Regression for the edit-page race: parent renders the component
+    // BEFORE the server has been fetched, so `location` is initially
+    // undefined. Once the parent resolves the server, `location` flips
+    // to a real value and the component MUST trigger
+    // `serverTypes.load(location)`. Using `$effect` (not `onMount`)
+    // makes this re-run work; `onMount` would silently swallow the
+    // transition because it only fires once at mount time.
+    const loadSpy = vi.spyOn(serverTypes, 'load');
+    const { rerender } = render(ServerTypeMultiSelect, {
+      props: { value: [], server: baseServer, id: 'ms' },
+    });
+    await tick();
+    expect(loadSpy).not.toHaveBeenCalled();
+
+    rerender({
+      value: [],
+      server: { ...baseServer, location: 'fsn1' },
+      id: 'ms',
+      location: 'fsn1',
+    });
+    await tick();
+    await tick(); // give microtasks a chance to flush
+    expect(loadSpy).toHaveBeenCalledWith('fsn1');
+    loadSpy.mockRestore();
+  });
 });

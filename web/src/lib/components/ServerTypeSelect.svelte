@@ -1,6 +1,5 @@
 <script lang="ts">
   import { Select } from 'bits-ui';
-  import { onMount } from 'svelte';
   import { serverTypes } from '$lib/stores/serverTypes.svelte';
   import { m } from '$lib/paraglide/messages.js';
   import type { Server, ServerType } from '$lib/types';
@@ -34,7 +33,8 @@
     /**
      * Server location used to drive `serverTypes.load(location)`. When
      * omitted (purely-presentation uses that don't render badges), the
-     * onMount load is skipped.
+     * load is skipped. The component uses `$effect`, so this prop can
+     * transition from undefined → a real value after mount.
      */
     location?: string;
     id?: string;
@@ -66,7 +66,15 @@
     open = $bindable(false)
   }: Props = $props();
 
-  onMount(() => {
+  // Load the catalog whenever `location` becomes a non-empty string.
+  // Using `$effect` (not `onMount`) is intentional: on pages like the
+  // server-edit form, the parent renders this component *before* the
+  // server has been fetched from the API, so `location` is initially
+  // undefined. `onMount` would fire only once with `undefined` and
+  // never re-fire when the server finally resolves. `$effect`
+  // re-runs whenever `location` changes, so it picks up the resolved
+  // server and triggers the catalog load.
+  $effect(() => {
     if (location) {
       serverTypes.load(location).catch(() => { /* loadError is set on the store */ });
     }

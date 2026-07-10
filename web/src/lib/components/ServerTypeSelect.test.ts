@@ -154,4 +154,44 @@ describe('ServerTypeSelect', () => {
     });
     expect(cx33Found).toBe(true);
   });
+
+  it('loads the catalog after location transitions undefined → "fsn1"', async () => {
+    // Regression for the edit-page race: parent renders the component
+    // BEFORE the server has been fetched, so `location` is initially
+    // undefined. Once the parent resolves the server, `location` flips
+    // to a real value and the component MUST trigger
+    // `serverTypes.load(location)`. Using `$effect` (not `onMount`)
+    // makes this re-run work; `onMount` would silently swallow the
+    // transition because it only fires once at mount time.
+    const loadSpy = vi.spyOn(serverTypes, 'load');
+    const { rerender } = render(ServerTypeSelect, {
+      props: { value: '', server: baseServer, id: 'sel' },
+    });
+    await tick();
+    expect(loadSpy).not.toHaveBeenCalled();
+
+    rerender({
+      value: '',
+      server: { ...baseServer, location: 'fsn1' },
+      id: 'sel',
+      location: 'fsn1',
+    });
+    await tick();
+    await tick(); // give microtasks a chance to flush
+    expect(loadSpy).toHaveBeenCalledWith('fsn1');
+    loadSpy.mockRestore();
+  });
+
+  it('does not call load while location stays undefined', async () => {
+    // Defensive companion to the transition test: the effect must
+    // skip when location is undefined, not call serverTypes.load('').
+    const loadSpy = vi.spyOn(serverTypes, 'load');
+    render(ServerTypeSelect, {
+      props: { value: '', server: baseServer, id: 'sel' },
+    });
+    await tick();
+    await tick();
+    expect(loadSpy).not.toHaveBeenCalled();
+    loadSpy.mockRestore();
+  });
 });
