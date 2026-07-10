@@ -229,11 +229,11 @@
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
       <div class="flex flex-col gap-1.5">
         <Label for="reg-base">{m.project_detail_field_base()}</Label>
-        <ServerTypeSelect id="reg-base" bind:value={newBase} required />
+        <ServerTypeSelect id="reg-base" bind:value={newBase} location="fsn1" required />
       </div>
       <div class="flex flex-col gap-1.5">
         <Label for="reg-top">{m.project_detail_field_top()}</Label>
-        <ServerTypeSelect id="reg-top" bind:value={newTop} required />
+        <ServerTypeSelect id="reg-top" bind:value={newTop} location="fsn1" required />
       </div>
       <div class="flex flex-col gap-1.5">
         <Label for="reg-fallback">{m.project_detail_field_fallback()}</Label>
@@ -241,6 +241,7 @@
           id="reg-fallback"
           bind:value={newFallback}
           excluded={[newBase, newTop].filter(Boolean)}
+          location="fsn1"
         />
       </div>
     </div>

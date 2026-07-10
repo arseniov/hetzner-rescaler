@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/hetznercloud/hcloud-go/hcloud"
+	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 )
 
 // fakeAPI is a minimal in-test fake. We use it to verify the adapter

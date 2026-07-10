@@ -59,7 +59,7 @@ describe('serverTypes store', () => {
     mockFetchOnce(SAMPLE_TYPES);
     const { serverTypes } = await import('./serverTypes.svelte');
     serverTypes.reset();
-    await serverTypes.load();
+    await serverTypes.load('fsn1');
     expect(serverTypes.types).toHaveLength(2);
     expect(serverTypes.loadedAt).not.toBeNull();
   });
@@ -74,9 +74,9 @@ describe('serverTypes store', () => {
     (globalThis as any).fetch = fetchMock;
     const { serverTypes } = await import('./serverTypes.svelte');
     serverTypes.reset();
-    await serverTypes.load();
-    await serverTypes.load();
-    await serverTypes.load();
+    await serverTypes.load('fsn1');
+    await serverTypes.load('fsn1');
+    await serverTypes.load('fsn1');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -84,7 +84,7 @@ describe('serverTypes store', () => {
     mockFetchOnce(SAMPLE_TYPES);
     const { serverTypes } = await import('./serverTypes.svelte');
     serverTypes.reset();
-    await serverTypes.load();
+    await serverTypes.load('fsn1');
     expect(serverTypes.byName('cpx11')?.cores).toBe(2);
     expect(serverTypes.byName('missing')).toBeUndefined();
   });
@@ -93,7 +93,7 @@ describe('serverTypes store', () => {
     mockFetchOnce(SAMPLE_TYPES);
     const { serverTypes } = await import('./serverTypes.svelte');
     serverTypes.reset();
-    await serverTypes.load();
+    await serverTypes.load('fsn1');
     const avail = serverTypes.available();
     expect(avail.map((t) => t.name)).toEqual(['cpx11']);
   });
@@ -102,12 +102,12 @@ describe('serverTypes store', () => {
     mockFetchOnce(SAMPLE_TYPES);
     const { serverTypes } = await import('./serverTypes.svelte');
     serverTypes.reset();
-    await serverTypes.load();
+    await serverTypes.load('fsn1');
     expect(serverTypes.types).toHaveLength(2);
     // Force a re-fetch; the mocked fetch now fails.
     serverTypes.reset();
     (globalThis as any).fetch = vi.fn().mockRejectedValue(new Error('boom'));
-    await expect(serverTypes.load(true)).rejects.toThrow('boom');
+    await expect(serverTypes.load('fsn1', true)).rejects.toThrow('boom');
     // After reset+failed load, types is empty and loadError is set.
     expect(serverTypes.types).toHaveLength(0);
     expect(serverTypes.loadError).toBe('boom');

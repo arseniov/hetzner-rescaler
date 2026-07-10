@@ -4,10 +4,17 @@ import (
 	"context"
 	"net/http"
 	"strconv"
+
+	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 )
 
-// handleServerTypes returns the Hetzner server types for the UI's
-// server-type picker. It proxies to the first project's Hetzner API.
+// handleServerTypes returns Hetzner server types for the UI's
+// server-type picker. It proxies to the first project's Hetzner API,
+// filtered to the requested location's per-type availability.
+//
+// ?location=X is REQUIRED (400 otherwise) because availability and
+// price are both per-location — returning the catalog without a
+// location would be misleading.
 //
 // Multi-tenant note: today the endpoint always reads from the first
 // project in the store. A second project added later will not get its
@@ -17,7 +24,12 @@ import (
 // multi-tenant mode is added, the picker should switch to per-project
 // token and a "current project" header.
 func (d Deps) handleServerTypes(w http.ResponseWriter, r *http.Request) {
-	types, err := d.serverTypes(r.Context())
+	loc := r.URL.Query().Get("location")
+	if loc == "" {
+		writeJSONError(w, http.StatusBadRequest, "location query param required")
+		return
+	}
+	types, err := d.serverTypes(r.Context(), loc)
 	if err != nil {
 		// serverTypes returns the raw error; map it to the right HTTP
 		// status here (502 for upstream Hetzner failures, 500 for our
@@ -40,10 +52,15 @@ func (d Deps) handleServerTypes(w http.ResponseWriter, r *http.Request) {
 // metrics handler reads live prices from the same code path as the
 // web's server-type picker.
 //
+// The location argument scopes both the "available" flag and the
+// monthly EUR price to that location's entry on the underlying
+// hetzner.ServerType. Types without any entry for the requested
+// location come back Available=false, PriceMonthlyEUR=0.
+//
 // The error type is intentionally a tiny struct so the HTTP handler
 // can pick the right status code without parsing strings; the metrics
 // handler ignores it and falls back to the fixed map.
-func (d Deps) serverTypes(ctx context.Context) ([]ServerTypeResponse, error) {
+func (d Deps) serverTypes(ctx context.Context, location string) ([]ServerTypeResponse, error) {
 	projects, err := d.Store.ListProjects()
 	if err != nil {
 		return nil, &serverTypesError{status: http.StatusInternalServerError, msg: err.Error()}
@@ -64,26 +81,45 @@ func (d Deps) serverTypes(ctx context.Context) ([]ServerTypeResponse, error) {
 		if t == nil {
 			continue
 		}
-		// hcloud.Price.Gross is a string (e.g. "3.290000"); parse to
-		// float32 for the DTO. If the string is unparseable, leave the
-		// price at 0 rather than 500'ing the whole list.
-		var priceMonthly float32
-		if len(t.Pricings) > 0 {
-			if v, perr := strconv.ParseFloat(t.Pricings[0].Monthly.Gross, 32); perr == nil {
-				priceMonthly = float32(v)
-			}
-		}
 		out = append(out, ServerTypeResponse{
 			Name:            t.Name,
 			Description:     t.Description,
 			Cores:           t.Cores,
 			MemoryGB:        t.Memory,
 			DiskGB:          float32(t.Disk),
-			Available:       len(t.Pricings) > 0,
-			PriceMonthlyEUR: priceMonthly,
+			Available:       availableIn(t, location),
+			PriceMonthlyEUR: priceIn(t, location),
 		})
 	}
 	return out, nil
+}
+
+// availableIn returns true iff the given type has a Locations entry
+// whose Location.Name matches and whose Available flag is set. A
+// missing entry is treated as unavailable (false), since the type
+// simply is not offered at the requested location.
+func availableIn(t *hetzner.ServerType, location string) bool {
+	for _, l := range t.Locations {
+		if l.Location != nil && l.Location.Name == location {
+			return l.Available
+		}
+	}
+	return false
+}
+
+// priceIn parses the gross-eur monthly price from the Pricings entry
+// whose Location.Name matches. Missing entry or unparseable Gross
+// string yields 0.0 rather than an error — a $0 type is preferable
+// to a 500 on the whole list.
+func priceIn(t *hetzner.ServerType, location string) float32 {
+	for _, p := range t.Pricings {
+		if p.Location != nil && p.Location.Name == location {
+			if v, perr := strconv.ParseFloat(p.Monthly.Gross, 32); perr == nil {
+				return float32(v)
+			}
+		}
+	}
+	return 0
 }
 
 // serverTypesError carries the HTTP status the original handler would

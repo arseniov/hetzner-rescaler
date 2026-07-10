@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup } from '@testing-library/svelte';
+import { tick } from 'svelte';
 
 // $env/dynamic/public's virtual module returns undefined for `env` in
 // vitest; the paraglide `m` helper pulls from there. Mock to no-op.
@@ -112,5 +113,69 @@ describe('ServerTypeMultiSelect', () => {
       props: { value: ['cpx11'], server: null },
     });
     expect(getByText('cpx11')).toBeTruthy();
+  });
+
+  it('passes the location to serverTypes.load on mount', async () => {
+    const loadSpy = vi.spyOn(serverTypes, 'load');
+    render(ServerTypeMultiSelect, {
+      props: { value: ['cpx11'], location: 'nbg1' },
+    });
+    await tick();
+    // onMount runs after the first render, so the spy must have seen
+    // exactly one load call with the supplied location.
+    expect(loadSpy).toHaveBeenCalledWith('nbg1');
+    loadSpy.mockRestore();
+  });
+
+  it('skips load when location is not provided', async () => {
+    // Backwards-compat: callers that pre-date the location prop
+    // (e.g. some tests, future purely-presentation uses) must not
+    // trigger a load for an arbitrary default.
+    const loadSpy = vi.spyOn(serverTypes, 'load');
+    render(ServerTypeMultiSelect, {
+      props: { value: ['cpx11'] },
+    });
+    await tick();
+    expect(loadSpy).not.toHaveBeenCalled();
+    loadSpy.mockRestore();
+  });
+
+  it('uses conditional load with location="fsn1"', async () => {
+    // Mirrors the project page's register-server dialog, which passes
+    // an explicit fsn1 default while the operator is typing.
+    const loadSpy = vi.spyOn(serverTypes, 'load');
+    render(ServerTypeMultiSelect, {
+      props: { value: [], location: 'fsn1' },
+    });
+    await tick();
+    expect(loadSpy).toHaveBeenCalledWith('fsn1');
+    loadSpy.mockRestore();
+  });
+
+  it('loads the catalog after location transitions undefined → "fsn1"', async () => {
+    // Regression for the edit-page race: parent renders the component
+    // BEFORE the server has been fetched, so `location` is initially
+    // undefined. Once the parent resolves the server, `location` flips
+    // to a real value and the component MUST trigger
+    // `serverTypes.load(location)`. Using `$effect` (not `onMount`)
+    // makes this re-run work; `onMount` would silently swallow the
+    // transition because it only fires once at mount time.
+    const loadSpy = vi.spyOn(serverTypes, 'load');
+    const { rerender } = render(ServerTypeMultiSelect, {
+      props: { value: [], server: baseServer, id: 'ms' },
+    });
+    await tick();
+    expect(loadSpy).not.toHaveBeenCalled();
+
+    rerender({
+      value: [],
+      server: { ...baseServer, location: 'fsn1' },
+      id: 'ms',
+      location: 'fsn1',
+    });
+    await tick();
+    await tick(); // give microtasks a chance to flush
+    expect(loadSpy).toHaveBeenCalledWith('fsn1');
+    loadSpy.mockRestore();
   });
 });

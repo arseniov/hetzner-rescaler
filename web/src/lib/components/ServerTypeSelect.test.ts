@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, cleanup } from '@testing-library/svelte';
+import { tick } from 'svelte';
 
 // $env/dynamic/public's virtual module returns undefined for `env` in
 // vitest; the paraglide `m` helper pulls from there. Mock to no-op.
@@ -108,5 +109,89 @@ describe('ServerTypeSelect', () => {
     });
     // Em-dash placeholder is shown in the trigger label.
     expect(getByRole('button', { name: /—/ })).toBeTruthy();
+  });
+
+  it('renders the Unavailable badge for types with available=false', async () => {
+    render(ServerTypeSelect, {
+      props: { value: '', server: baseServer, id: 'sel', open: true },
+    });
+    // With `open=true`, the options are mounted into the DOM (the
+    // portal collapses to the body in jsdom). The assertion is a
+    // simple text-match against the whole body.
+    await tick();
+    expect(document.body.textContent).toMatch(/Unavailable/);
+  });
+
+  it('does NOT render the Unavailable badge for available types', async () => {
+    serverTypes._reset();
+    serverTypes._setTypesForTest([
+      { name: 'cpx11', available: true, cores: 2, memory_gb: 2, price_monthly_eur: 4.85 },
+      { name: 'cpx21', available: true, cores: 3, memory_gb: 4, price_monthly_eur: 9.85 },
+    ]);
+    render(ServerTypeSelect, {
+      props: { value: '', server: baseServer, id: 'sel', open: true },
+    });
+    await tick();
+    expect(document.body.textContent).not.toMatch(/Unavailable/);
+  });
+
+  it('unavailable types remain selectable (no disabled attribute)', async () => {
+    render(ServerTypeSelect, {
+      props: { value: '', server: baseServer, id: 'sel', open: true },
+    });
+    await tick();
+    // The cx33 type in typeOverrides() has available=false; ensure the
+    // rendered Select.Item for it is not data-disabled (i.e. still
+    // selectable — types may come back into stock).
+    const items = document.body.querySelectorAll('[role="option"]');
+    let cx33Found = false;
+    items.forEach((el) => {
+      const label = el.getAttribute('aria-label') ?? el.textContent ?? '';
+      if (label.includes('cx33')) {
+        cx33Found = true;
+        expect(el.getAttribute('data-disabled')).toBeNull();
+      }
+    });
+    expect(cx33Found).toBe(true);
+  });
+
+  it('loads the catalog after location transitions undefined → "fsn1"', async () => {
+    // Regression for the edit-page race: parent renders the component
+    // BEFORE the server has been fetched, so `location` is initially
+    // undefined. Once the parent resolves the server, `location` flips
+    // to a real value and the component MUST trigger
+    // `serverTypes.load(location)`. Using `$effect` (not `onMount`)
+    // makes this re-run work; `onMount` would silently swallow the
+    // transition because it only fires once at mount time.
+    const loadSpy = vi.spyOn(serverTypes, 'load');
+    const { rerender } = render(ServerTypeSelect, {
+      props: { value: '', server: baseServer, id: 'sel' },
+    });
+    await tick();
+    expect(loadSpy).not.toHaveBeenCalled();
+
+    rerender({
+      value: '',
+      server: { ...baseServer, location: 'fsn1' },
+      id: 'sel',
+      location: 'fsn1',
+    });
+    await tick();
+    await tick(); // give microtasks a chance to flush
+    expect(loadSpy).toHaveBeenCalledWith('fsn1');
+    loadSpy.mockRestore();
+  });
+
+  it('does not call load while location stays undefined', async () => {
+    // Defensive companion to the transition test: the effect must
+    // skip when location is undefined, not call serverTypes.load('').
+    const loadSpy = vi.spyOn(serverTypes, 'load');
+    render(ServerTypeSelect, {
+      props: { value: '', server: baseServer, id: 'sel' },
+    });
+    await tick();
+    await tick();
+    expect(loadSpy).not.toHaveBeenCalled();
+    loadSpy.mockRestore();
   });
 });

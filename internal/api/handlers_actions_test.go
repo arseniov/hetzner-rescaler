@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hetznercloud/hcloud-go/hcloud"
+	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
 	"github.com/jonamat/hetzner-rescaler/internal/rescaler"
 )
@@ -235,7 +235,7 @@ func TestRescale_ConcurrentReturns409WithPendingID(t *testing.T) {
 
 type blockingTestAPI struct{ hetzner.API }
 
-func (b *blockingTestAPI) GetServer(ctx context.Context, id int) (*hetzner.Server, error) {
+func (b *blockingTestAPI) GetServer(ctx context.Context, id int64) (*hetzner.Server, error) {
 	// Status: ServerStatusRunning so RescaleWithHook hits the shutdown branch
 	// (calling our ShutdownServer), then waits in waitAction's blocking GetAction.
 	return &hetzner.Server{ID: id, Status: hcloud.ServerStatusRunning, ServerType: &hetzner.ServerType{Name: "cpx11"}}, nil
@@ -245,7 +245,7 @@ func (b *blockingTestAPI) ShutdownServer(ctx context.Context, srv *hetzner.Serve
 	return &hetzner.Action{ID: 1, Status: hcloud.ActionStatusRunning, Command: "shutdown"}, nil
 }
 
-func (b *blockingTestAPI) GetAction(ctx context.Context, id int) (*hetzner.Action, error) {
+func (b *blockingTestAPI) GetAction(ctx context.Context, id int64) (*hetzner.Action, error) {
 	<-ctx.Done()
 	return nil, ctx.Err()
 }

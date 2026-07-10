@@ -39,10 +39,10 @@ func (s *Store) AppendEvent(e Event) (int64, error) {
 		okInt = 1
 	}
 	res, err := s.db.Exec(
-		`INSERT INTO events (server_id, kind, from_type, to_type, started_at, finished_at, ok, error, triggered_by)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO events (server_id, kind, from_type, to_type, started_at, finished_at, ok, error, triggered_by, phase)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.ServerID, e.Kind, e.FromType, e.ToType,
-		e.StartedAt.Unix(), finished, okInt, e.Error, e.TriggeredBy,
+		e.StartedAt.Unix(), finished, okInt, e.Error, e.TriggeredBy, e.Phase,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("store: insert event: %w", err)

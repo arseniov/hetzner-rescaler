@@ -24,7 +24,8 @@ type ProjectResponse struct {
 //     promote_state, timezone, created_at, updated_at, pending_event
 //   - live Hetzner state: status (running/initializing/starting/stopping/
 //     off/deleting), current_type (the live ServerType.Name as reported
-//     by Hetzner right now)
+//     by Hetzner right now), location (the live Datacenter.Location.Name
+//     as reported by Hetzner right now)
 //
 // Live fields are omitempty: a Hetzner API failure leaves them absent
 // from the response so the web can fall back to its own derived state
@@ -43,6 +44,7 @@ type ServerResponse struct {
 	Timezone       string    `json:"timezone"`
 	Status         string    `json:"status,omitempty"`
 	CurrentType    string    `json:"current_type,omitempty"`
+	Location       string    `json:"location,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 	// PendingEvent is the in-flight rescale_pending event for this server,

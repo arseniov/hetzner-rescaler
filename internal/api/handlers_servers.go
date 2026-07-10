@@ -232,6 +232,7 @@ func serverToResponse(s *store.Server, live LiveServerState, pending *store.Even
 		Timezone:       s.Timezone,
 		Status:         live.Status,
 		CurrentType:    live.CurrentType,
+		Location:       live.Location,
 		CreatedAt:      s.CreatedAt,
 		UpdatedAt:      s.UpdatedAt,
 	}

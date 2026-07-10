@@ -1,7 +1,7 @@
 package hetzner
 
 import (
-	"github.com/hetznercloud/hcloud-go/hcloud"
+	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 )
 
 // ServerType is a small re-export of hcloud.ServerType to keep the engine
@@ -14,6 +14,13 @@ type Server = hcloud.Server
 
 // Action is a small re-export of hcloud.Action.
 type Action = hcloud.Action
+
+// Datacenter is a small re-export of hcloud.Datacenter. (Deprecated in the
+// Hetzner Cloud API, but still populated on hcloud.Server for now.)
+type Datacenter = hcloud.Datacenter
+
+// Location is a small re-export of hcloud.Location.
+type Location = hcloud.Location
 
 // Action status constants, re-exported from hcloud.ActionStatus* for use in
 // tests and in the rescaler code that polls action status.

@@ -262,7 +262,7 @@ func (s *Scheduler) tryPromote(srv *store.Server, api hetzner.API, target string
 	// Try the rescale; on unavailable, set promote_state to 'promoting' so we
 	// keep trying on future ticks. The actual polling cadence is the
 	// scheduler's tick interval; no separate goroutine.
-	hsrv, err := api.GetServer(context.Background(), srv.HCloudServerID)
+	hsrv, err := api.GetServer(context.Background(), int64(srv.HCloudServerID))
 	if err != nil {
 		return err
 	}
@@ -288,7 +288,7 @@ func (s *Scheduler) dispatch(srv *store.Server, api hetzner.API, target, trigger
 	}
 	defer s.store.ReleaseAction(srv.ID)
 
-	hsrv, err := api.GetServer(context.Background(), srv.HCloudServerID)
+	hsrv, err := api.GetServer(context.Background(), int64(srv.HCloudServerID))
 	if err != nil {
 		s.log.Printf("server %d: fetch server: %v", srv.ID, err)
 		return
@@ -299,7 +299,7 @@ func (s *Scheduler) dispatch(srv *store.Server, api hetzner.API, target, trigger
 	}
 
 	start := time.Now().UTC()
-	used, rescaleErr := rescaler.RescaleWithFallback(context.Background(), api, hsrv, target, srv.FallbackChain)
+	used, rescaleErr := rescaler.RescaleWithFallbackWithHook(context.Background(), api, hsrv, target, srv.FallbackChain, s.store, srv.ID, triggeredBy, nil)
 	finished := time.Now().UTC()
 
 	kind := "rescale_up"
@@ -337,7 +337,7 @@ func (s *Scheduler) dispatch(srv *store.Server, api hetzner.API, target, trigger
 }
 
 func fetchCurrentType(ctx context.Context, api hetzner.API, srv *store.Server) (string, error) {
-	s, err := api.GetServer(ctx, srv.HCloudServerID)
+	s, err := api.GetServer(ctx, int64(srv.HCloudServerID))
 	if err != nil {
 		return "", err
 	}

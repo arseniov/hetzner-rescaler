@@ -7,13 +7,14 @@ import (
 )
 
 // LiveServerState is the slice of Hetzner server state the API exposes
-// alongside the stored configuration. Both fields are zero values when
+// alongside the stored configuration. All fields are zero values when
 // Hetzner is unreachable, the server has been deleted from Hetzner, or
 // the project's API token is invalid — there is no failure path that
 // turns into a non-2xx response from /api/servers.
 type LiveServerState struct {
 	Status      string
 	CurrentType string
+	Location    string
 }
 
 // liveServerState fetches the live state for a single server. It is
@@ -41,7 +42,7 @@ func (d Deps) liveServerState(ctx context.Context, srv *store.Server) LiveServer
 	if err != nil {
 		return LiveServerState{}
 	}
-	hs, err := api.GetServer(ctx, srv.HCloudServerID)
+	hs, err := api.GetServer(ctx, int64(srv.HCloudServerID))
 	if err != nil || hs == nil {
 		return LiveServerState{}
 	}
@@ -50,6 +51,18 @@ func (d Deps) liveServerState(ctx context.Context, srv *store.Server) LiveServer
 	}
 	if hs.ServerType != nil {
 		out.CurrentType = hs.ServerType.Name
+	}
+	// Hetzner is phasing out Server.Datacenter in favour of Server.Location
+	// as the canonical "where is this server" field. See
+	// https://docs.hetzner.cloud/changelog#2025-12-16-phasing-out-datacenters
+	// — Datacenter removal is scheduled after 1 July 2026. For the
+	// transitional window both fields may be populated; after 1 July
+	// only Location is. We read both, with Location winning because
+	// that's the field Hetzner intends to keep populated.
+	if hs.Location != nil {
+		out.Location = hs.Location.Name
+	} else if hs.Datacenter != nil && hs.Datacenter.Location != nil {
+		out.Location = hs.Datacenter.Location.Name
 	}
 	return out
 }

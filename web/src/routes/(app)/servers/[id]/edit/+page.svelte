@@ -4,6 +4,7 @@
   import { goto } from '$app/navigation';
   import { m } from '$lib/paraglide/messages.js';
   import { api, ApiError } from '$lib/api';
+  import { serverTypes } from '$lib/stores/serverTypes.svelte';
   import type { Server } from '$lib/types';
   import Button from '$lib/components/ui/button.svelte';
   import Input from '$lib/components/ui/input.svelte';
@@ -31,9 +32,49 @@
 
   let serverId = $derived(Number($page.params.id));
 
+  // Default location for the catalog load. Used when /api/servers/[id]
+  // doesn't return a `location` field — which DOES happen for any
+  // server where Hetzner's GetServer call soft-fails (token problems,
+  // the server was deleted out-of-band, Datacenter is nil in the Hetzner
+  // response). In that case `liveServerState` returns the zero-value
+  // LiveServerState and the JSON tag omitempty drops the field, so
+  // `server.location` is undefined on the wire. Confirmed 2026-07-10
+  // by inspecting a real API payload:
+  //   {"id":2,"project_id":2,"hcloud_server_id":139131129,
+  //    "name":"fiutaspesa-app",..., "status":"running",
+  //    "current_type":"cx33","created_at":"...", "updated_at":"..."}
+  // — note the missing `location` key. Without this default, the
+  // /api/server-types?location=X call NEVER fires for such servers.
+  // `fsn1` matches the hardcoded default used by the project page's
+  // register-server dialog (see projects/[id]/+page.svelte).
+  const FALLBACK_LOCATION = 'fsn1';
+
   onMount(async () => {
+    // Fire the per-location catalog load IMMEDIATELY on mount, BEFORE
+    // awaiting the server. This guarantees the network request goes
+    // out on every navigation to /servers/[id]/edit — which is the
+    // contract the type-availability gate relies on. The store's
+    // in-flight map dedupes overlapping calls; the per-location TTL
+    // cache keeps repeat visits cheap.
+    serverTypes.load(FALLBACK_LOCATION).catch(() => {
+      /* loadError is set on the store */
+    });
+
     try {
       server = await api.getServer(serverId);
+      // If the server resolves with a real location (the typical case),
+      // refire the load with it. Store-level dedup means a back-to-back
+      // load for the SAME location returns the cached result with no
+      // extra network call; a different location triggers a fresh
+      // fetch that's also cached for 5min. The dropdown is already
+      // showing types from FALLBACK_LOCATION so it has something to
+      // render immediately; the refire upgrades it to per-location
+      // availability as soon as the server data arrives.
+      if (server.location && server.location !== FALLBACK_LOCATION) {
+        serverTypes.load(server.location).catch(() => {
+          /* loadError is set on the store */
+        });
+      }
       form = {
         name: server.name,
         label: server.label,
@@ -115,11 +156,11 @@
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <div class="flex flex-col gap-1.5">
         <Label for="f-base">{m.server_edit_field_base()}</Label>
-        <ServerTypeSelect id="f-base" bind:value={form.base_server_type} server={server} required />
+        <ServerTypeSelect id="f-base" bind:value={form.base_server_type} server={server} location={server?.location} required />
       </div>
       <div class="flex flex-col gap-1.5">
         <Label for="f-top">{m.server_edit_field_top()}</Label>
-        <ServerTypeSelect id="f-top" bind:value={form.top_server_type} server={server} required />
+        <ServerTypeSelect id="f-top" bind:value={form.top_server_type} server={server} location={server?.location} required />
       </div>
     </div>
 
@@ -129,6 +170,8 @@
         id="f-chain"
         bind:value={form.fallback_chain}
         excluded={[form.base_server_type, form.top_server_type].filter(Boolean)}
+        server={server}
+        location={server?.location}
       />
     </div>
 

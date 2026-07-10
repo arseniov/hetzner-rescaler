@@ -4,6 +4,7 @@
   import { ArrowLeft, Plus, Trash2 } from 'lucide-svelte';
   import { m } from '$lib/paraglide/messages.js';
   import { api, ApiError } from '$lib/api';
+  import { serverTypes } from '$lib/stores/serverTypes.svelte';
   import type { Server, Window_ as Window } from '$lib/types';
   import Button from '$lib/components/ui/button.svelte';
   import Input from '$lib/components/ui/input.svelte';
@@ -61,9 +62,43 @@
     newEnabled = true;
   }
 
+  // Default location for the catalog load. Used when /api/servers/[id]
+  // doesn't return a `location` field — which DOES happen for any
+  // server where Hetzner's GetServer call soft-fails (token problems,
+  // the server was deleted out-of-band, Datacenter is nil in the Hetzner
+  // response). The zero-value LiveServerState means the JSON tag
+  // omitempty drops the field and `server.location` is undefined on
+  // the wire. Confirmed 2026-07-10 via /api/servers/[id] payload.
+  // `fsn1` matches the project page's hardcoded default for the
+  // register-server dialog (see projects/[id]/+page.svelte).
+  const FALLBACK_LOCATION = 'fsn1';
+
   async function refresh() {
+    // Fire the per-location catalog load IMMEDIATELY — before awaiting
+    // the server — so the /api/server-types?location=X request goes
+    // out on every navigation to the windows tab. This is the contract
+    // the type-availability gate relies on. The store's in-flight map
+    // dedupes overlapping calls; per-location TTL cache keeps repeat
+    // visits cheap.
+    serverTypes.load(FALLBACK_LOCATION).catch(() => {
+      /* loadError is set on the store */
+    });
+
     try {
       server = await api.getServer(serverId);
+      // If the server resolves with a real location (typical case),
+      // refire with it. A back-to-back load for the SAME location
+      // returns the cached result with no extra network call; a
+      // different location triggers a fresh fetch that's also cached
+      // for 5min. The dropdown already shows types from
+      // FALLBACK_LOCATION, so it has something to render immediately;
+      // the refire upgrades it to per-location availability once the
+      // server data arrives.
+      if (server.location && server.location !== FALLBACK_LOCATION) {
+        serverTypes.load(server.location).catch(() => {
+          /* loadError is set on the store */
+        });
+      }
       windows = await api.listWindows(serverId);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -287,7 +322,7 @@
         so the operator can't typo a Hetzner type code into the form.
         `required` enforces a non-empty selection before submit.
       -->
-      <ServerTypeSelect id="w-target" bind:value={newTarget} server={server} required />
+      <ServerTypeSelect id="w-target" bind:value={newTarget} server={server} location={server?.location} required />
     </div>
 
     <!--

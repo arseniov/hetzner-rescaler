@@ -2,37 +2,61 @@ import { api } from '$lib/api';
 import type { ServerType } from '$lib/types';
 
 // Soft TTL — 5 minutes. The server-types catalog rarely changes (a new
-// type appears maybe quarterly), so re-fetching on every page mount is
-// wasteful. Five minutes is the same window used by Hetzner Cloud UI
-// for its server-type dropdowns.
+// type appears maybe quarterly, and per-location availability only flips
+// on Hetzner stock events), so re-fetching on every page mount is wasteful.
 const TTL_MS = 5 * 60 * 1000;
 
+interface LocationCache {
+  types: ServerType[];
+  loadedAt: number;
+}
+
 class ServerTypesStore {
+  // The most recently loaded catalog (whatever location it was for).
+  // Pages that don't care about location read this; pages that need a
+  // specific location call `load(location)` which keeps the cache fresh
+  // for that location.
   types = $state<ServerType[]>([]);
   loadedAt = $state<number | null>(null);
   loadError = $state<string | null>(null);
 
-  // Single in-flight promise so two simultaneous `load()` calls
+  // Per-location cache. Keyed by location name; the most recent
+  // successful load for each location sticks around for one TTL window.
+  private byLocation = new Map<string, LocationCache>();
+
+  // Single in-flight promise so two simultaneous `load(loc)` calls
   // share the same network request rather than racing each other.
-  private inflight: Promise<ServerType[]> | null = null;
+  // The key includes the location so simultaneous loads for DIFFERENT
+  // locations each get their own in-flight promise.
+  private inflight = new Map<string, Promise<ServerType[]>>();
 
   /**
-   * Load the catalog, idempotent within the soft TTL. The first call
-   * always fetches; subsequent calls within TTL return the cached
-   * result without touching the network. On error, the prior value
-   * stays intact and the new error is recorded in `loadError`.
+   * Load the catalog for a specific Hetzner location (e.g. "fsn1").
+   * Idempotent within the soft TTL: a second call for the same
+   * location within 5 minutes returns the cached result. Calls for a
+   * different location refetch (the cache is per-location).
+   *
+   * On error, the prior value stays intact and the new error is
+   * recorded in `loadError`. The store's `types` always reflects the
+   * last successful load for any location.
    */
-  load(force = false): Promise<ServerType[]> {
-    if (this.inflight) return this.inflight;
+  load(location: string, force = false): Promise<ServerType[]> {
+    if (!location) {
+      return Promise.reject(new Error('location required'));
+    }
+    const existing = this.inflight.get(location);
+    if (existing) return existing;
 
-    const fresh = this.loadedAt !== null && Date.now() - this.loadedAt < TTL_MS;
+    const cached = this.byLocation.get(location);
+    const fresh = cached !== undefined && Date.now() - cached.loadedAt < TTL_MS;
     if (!force && fresh) {
-      return Promise.resolve(this.types);
+      return Promise.resolve(cached!.types);
     }
 
-    this.inflight = api
-      .serverTypes()
+    const promise = api
+      .serverTypes(location)
       .then((items) => {
+        this.byLocation.set(location, { types: items, loadedAt: Date.now() });
         this.types = items;
         this.loadedAt = Date.now();
         this.loadError = null;
@@ -43,10 +67,11 @@ class ServerTypesStore {
         throw err;
       })
       .finally(() => {
-        this.inflight = null;
+        this.inflight.delete(location);
       });
 
-    return this.inflight;
+    this.inflight.set(location, promise);
+    return promise;
   }
 
   /** Look up a type by name. Returns undefined when the catalog hasn't loaded. */
@@ -60,20 +85,21 @@ class ServerTypesStore {
     return names.map((n) => map.get(n));
   }
 
-  /** Types that Hetzner currently reports as available (not sold out). */
+  /** Types that Hetzner currently reports as available. */
   available(): ServerType[] {
     return this.types.filter((t) => t.available);
   }
 
   /**
    * Test helper — clears the cache + in-flight state so the next
-   * `load()` re-fetches. Not used by application code.
+   * `load()` re-fetches for every location.
    */
   reset(): void {
     this.types = [];
     this.loadedAt = null;
     this.loadError = null;
-    this.inflight = null;
+    this.byLocation.clear();
+    this.inflight.clear();
   }
 
   /** TEST-ONLY: reset the catalog to an empty state. */
@@ -81,9 +107,11 @@ class ServerTypesStore {
     this.types = [];
     this.loadedAt = null;
     this.loadError = null;
+    this.byLocation.clear();
+    this.inflight.clear();
   }
 
-  /** TEST-ONLY: replace the catalog with a fixed list. */
+  /** TEST-ONLY: replace the catalog with a fixed list (no location set). */
   _setTypesForTest(items: ServerType[]): void {
     this.types = items;
     this.loadedAt = Date.now();

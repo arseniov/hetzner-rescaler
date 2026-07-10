@@ -1,7 +1,6 @@
 <script lang="ts">
   import { Select } from 'bits-ui';
   import { dndzone, type DndEvent } from 'svelte-dnd-action';
-  import { onMount } from 'svelte';
   import { X, GripVertical } from 'lucide-svelte';
   import { serverTypes } from '$lib/stores/serverTypes.svelte';
   import { m } from '$lib/paraglide/messages.js';
@@ -34,6 +33,15 @@
     value: string[];
     excluded?: string[];
     server?: Server | null;
+    /**
+     * Server location used to drive `serverTypes.load(location)`. When
+     * omitted (purely-presentation uses that don't render badges), the
+     * load is skipped. The component uses `$effect`, so this prop can
+     * transition from undefined → a real value after mount — e.g.
+     * the server-edit page, where the server is still being fetched
+     * when the component first renders.
+     */
+    location?: string;
     id?: string;
     disabled?: boolean;
     class?: string;
@@ -44,6 +52,7 @@
     value = $bindable(),
     excluded = [],
     server = null,
+    location,
     id,
     disabled = false,
     class: className = '',
@@ -51,8 +60,18 @@
     emptyLabel = m.server_type_multiselect_empty()
   }: Props = $props();
 
-  onMount(() => {
-    serverTypes.load().catch(() => { /* loadError is set on the store */ });
+  // Load the catalog whenever `location` becomes a non-empty string.
+  // Using `$effect` (not `onMount`) is intentional: on pages like the
+  // server-edit form, the parent renders this component *before* the
+  // server has been fetched from the API, so `location` is initially
+  // undefined. `onMount` would fire only once with `undefined` and
+  // never re-fire when the server finally resolves. `$effect`
+  // re-runs whenever `location` changes, so it picks up the resolved
+  // server and triggers the catalog load.
+  $effect(() => {
+    if (location) {
+      serverTypes.load(location).catch(() => { /* loadError is set on the store */ });
+    }
   });
 
   // Mirror the bound value into a chips list. The chip `id` is the

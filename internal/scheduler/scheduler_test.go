@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"github.com/jonamat/hetzner-rescaler/internal/broadcast"
 	"github.com/jonamat/hetzner-rescaler/internal/hcloudmock"
 	"github.com/jonamat/hetzner-rescaler/internal/hetzner"
@@ -138,7 +139,7 @@ func TestScheduler_WritesSchedulerTickOnIdleAutoPromote(t *testing.T) {
 	srv := seedSchedulerTestServer(t, st)
 
 	api := hcloudmock.New()
-	api.AddServer(&hetzner.Server{ID: srv.HCloudServerID, Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx31"}})
+	api.AddServer(&hetzner.Server{ID: int64(srv.HCloudServerID), Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx31"}})
 
 	clk := &recordingClock{t: time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)}
 	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
@@ -179,7 +180,7 @@ func TestScheduler_DebouncesTickHeartbeat(t *testing.T) {
 	srv := seedSchedulerTestServer(t, st)
 
 	api := hcloudmock.New()
-	api.AddServer(&hetzner.Server{ID: srv.HCloudServerID, Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx31"}})
+	api.AddServer(&hetzner.Server{ID: int64(srv.HCloudServerID), Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx31"}})
 
 	clk := &recordingClock{t: time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)}
 	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
@@ -212,7 +213,7 @@ func TestScheduler_WritesTickOnLockContention(t *testing.T) {
 	srv := seedSchedulerTestServer(t, st)
 
 	api := hcloudmock.New()
-	api.AddServer(&hetzner.Server{ID: srv.HCloudServerID, Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx11"}})
+	api.AddServer(&hetzner.Server{ID: int64(srv.HCloudServerID), Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx11"}})
 
 	clk := &recordingClock{t: time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)}
 	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
@@ -252,7 +253,7 @@ func TestScheduler_WritesTickOnNoWindows(t *testing.T) {
 	})
 
 	api := hcloudmock.New()
-	api.AddServer(&hetzner.Server{ID: srv.HCloudServerID, Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx11"}})
+	api.AddServer(&hetzner.Server{ID: int64(srv.HCloudServerID), Name: srv.Name, ServerType: &hetzner.ServerType{Name: "cpx11"}})
 
 	clk := &recordingClock{t: time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)}
 	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
@@ -314,4 +315,58 @@ func TestAttachLifecycle(t *testing.T) {
 	cancel()
 	sched.Stop()
 	<-done
+}
+
+func TestDispatch_UnavailableTypeEmitsRescaleSkipped(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	p, err := st.CreateProject("p", []byte("tok"), []byte("nonce12byts"))
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	api := hcloudmock.New()
+	api.SetLocations("cpx21", "fsn1", false) // target unavailable
+	api.AddServer(&hetzner.Server{
+		ID:         42,
+		Name:       "web",
+		Status:     hcloud.ServerStatusRunning,
+		ServerType: &hetzner.ServerType{Name: "cpx11"},
+		Datacenter: &hetzner.Datacenter{Location: &hetzner.Location{Name: "fsn1"}},
+	})
+
+	srv, err := st.CreateServer(p.ID, store.Server{
+		HCloudServerID: 42, Name: "w",
+		BaseServerType: "cpx11", TopServerType: "cpx21",
+		FallbackChain: []string{"cpx21"},
+		Mode: "scheduled", Timezone: "UTC",
+	})
+	if err != nil {
+		t.Fatalf("CreateServer: %v", err)
+	}
+
+	clk := &recordingClock{t: time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)}
+	sched := New(st, stubResolver(api), clk, 50*time.Millisecond)
+	sched.dispatch(srv, api, "cpx21", "scheduler")
+
+	events, err := st.ListEventsByServer(srv.ID, 100)
+	if err != nil {
+		t.Fatalf("ListEventsByServer: %v", err)
+	}
+	var found *store.Event
+	for _, e := range events {
+		if e.Kind == "rescale_skipped" {
+			found = e
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("expected rescale_skipped event, got %+v", events)
+	}
+	if found.FromType != "cpx21" || found.TriggeredBy != "scheduler" || found.Phase != "pre_check" {
+		t.Fatalf("event fields wrong: %+v", found)
+	}
 }

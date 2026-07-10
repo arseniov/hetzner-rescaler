@@ -1,6 +1,5 @@
 <script lang="ts">
   import { Select } from 'bits-ui';
-  import { onMount } from 'svelte';
   import { serverTypes } from '$lib/stores/serverTypes.svelte';
   import { m } from '$lib/paraglide/messages.js';
   import type { Server, ServerType } from '$lib/types';
@@ -31,6 +30,13 @@
      * are rendered and the dropdown behaves as a plain picker.
      */
     server?: Server | null;
+    /**
+     * Server location used to drive `serverTypes.load(location)`. When
+     * omitted (purely-presentation uses that don't render badges), the
+     * load is skipped. The component uses `$effect`, so this prop can
+     * transition from undefined → a real value after mount.
+     */
+    location?: string;
     id?: string;
     required?: boolean;
     disabled?: boolean;
@@ -38,21 +44,40 @@
     class?: string;
     ariaLabel?: string;
     placeholder?: string;
+    /**
+     * Whether the dropdown is open. Bound from the parent so tests can
+     * pre-mount the dropdown contents without simulating a click.
+     * Has no effect on user-facing behavior — the trigger toggles this
+     * transparently.
+     */
+    open?: boolean;
   };
   let {
     value = $bindable(),
     server,
+    location,
     id,
     required = false,
     disabled = false,
     onlyAvailable = false,
     class: className = '',
     ariaLabel,
-    placeholder
+    placeholder,
+    open = $bindable(false)
   }: Props = $props();
 
-  onMount(() => {
-    serverTypes.load().catch(() => { /* loadError is set on the store */ });
+  // Load the catalog whenever `location` becomes a non-empty string.
+  // Using `$effect` (not `onMount`) is intentional: on pages like the
+  // server-edit form, the parent renders this component *before* the
+  // server has been fetched from the API, so `location` is initially
+  // undefined. `onMount` would fire only once with `undefined` and
+  // never re-fire when the server finally resolves. `$effect`
+  // re-runs whenever `location` changes, so it picks up the resolved
+  // server and triggers the catalog load.
+  $effect(() => {
+    if (location) {
+      serverTypes.load(location).catch(() => { /* loadError is set on the store */ });
+    }
   });
 
   let options = $derived.by<ServerType[]>(() => {
@@ -105,7 +130,7 @@
   );
 </script>
 
-<Select.Root type="single" bind:value={() => value, (v) => (value = v ?? '')} {disabled}>
+<Select.Root type="single" bind:value={() => value, (v) => (value = v ?? '')} bind:open {disabled}>
   <Select.Trigger
     {id}
     {disabled}
@@ -146,6 +171,11 @@
                 )}
               >
                 {chipLabel(role)}
+              </span>
+            {/if}
+            {#if !t.available}
+              <span class="ml-auto inline-flex shrink-0 items-center rounded-sm border border-border bg-muted px-1 py-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+                {m.server_type_unavailable()}
               </span>
             {/if}
             <span class="font-mono">{t.name}</span>

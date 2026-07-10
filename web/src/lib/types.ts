@@ -25,6 +25,13 @@ export interface Server {
   // event-derived state in that case so the dashboard never blanks.
   status?: string;
   current_type?: string;
+  // Live Hetzner-reported location (e.g. `fsn1`, `nbg1`, `hel1`).
+  // Populated when the API call to Hetzner succeeds; absent when
+  // Hetzner is unreachable or the server has been deleted out-of-band.
+  // The frontend uses this to query /api/server-types?location=X for
+  // the per-location availability gate; when it's missing the frontend
+  // falls back to the unfiltered catalog so dropdowns never blank.
+  location?: string;
   created_at?: string;
   updated_at?: string;
   // In-flight rescale_pending event, if any. Mirrors the

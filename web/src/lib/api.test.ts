@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('$env/dynamic/public', () => ({ env: {} }));
 
 import { apiFetch } from './api';
+import { api } from './api';
 
 describe('apiFetch', () => {
   beforeEach(() => {
@@ -49,5 +50,41 @@ describe('apiFetch', () => {
 
     const result = await apiFetch('/api/projects');
     expect(result).toEqual([{ id: 1, name: 'p' }]);
+  });
+});
+
+describe('api.serverTypes', () => {
+  beforeEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
+
+  it('hits /api/server-types?location=fsn1 with the auth header', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([{ name: 'cpx11', available: true }]), {
+        status: 200, headers: { 'Content-Type': 'application/json' }
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubEnv('PUBLIC_INTERNAL_TOKEN', 't');
+
+    const result = await api.serverTypes('fsn1');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/server-types?location=fsn1');
+    expect((init?.headers as Headers).get('X-Internal-Token')).toBe('t');
+    expect(result).toEqual([{ name: 'cpx11', available: true }]);
+  });
+
+  it('encodes special characters in the location', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([]), { status: 200 })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubEnv('PUBLIC_INTERNAL_TOKEN', 't');
+
+    await api.serverTypes('fsn1 dc');
+
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/server-types?location=fsn1%20dc');
   });
 });

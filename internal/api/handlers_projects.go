@@ -182,7 +182,7 @@ func (d Deps) syncProjectServers(ctx context.Context, projectID int64) ([]Server
 		if hs == nil {
 			continue
 		}
-		if existing, ok := existingByID[hs.ID]; ok {
+		if existing, ok := existingByID[int(hs.ID)]; ok {
 			skipped = append(skipped, serverToResponse(existing, LiveServerState{}, nil))
 			continue
 		}
@@ -191,7 +191,7 @@ func (d Deps) syncProjectServers(ctx context.Context, projectID int64) ([]Server
 			baseName = st.Name
 		}
 		srv, err := d.Store.CreateServer(projectID, store.Server{
-			HCloudServerID: hs.ID,
+			HCloudServerID: int(hs.ID),
 			Name:           hs.Name,
 			Label:          hs.Name,
 			BaseServerType: baseName,
