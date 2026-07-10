@@ -2,10 +2,12 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
+  import { Calendar } from 'lucide-svelte';
   import { m } from '$lib/paraglide/messages.js';
   import { api, ApiError } from '$lib/api';
   import { serverTypes } from '$lib/stores/serverTypes.svelte';
-  import type { Server } from '$lib/types';
+  import { nextWindow, type WindowSpec } from '$lib/utils/windowSchedule';
+  import type { Server, Window_ as Window } from '$lib/types';
   import Button from '$lib/components/ui/button.svelte';
   import Input from '$lib/components/ui/input.svelte';
   import Label from '$lib/components/ui/label.svelte';
@@ -14,6 +16,11 @@
   import ServerTypeMultiSelect from '$lib/components/ServerTypeMultiSelect.svelte';
 
   let server = $state<Server | null>(null);
+  // Server's existing windows. Fetched alongside the server so the
+  // "first-window" banner can render meaningful info, not just a generic
+  // warning that fires for every scheduled-mode edit (including ones with
+  // dozens of well-defined windows). Populated in onMount below.
+  let windows = $state<Window[]>([]);
   let error = $state<string | null>(null);
   let saving = $state(false);
 
@@ -75,6 +82,12 @@
           /* loadError is set on the store */
         });
       }
+      // Fetch windows in parallel to the form setup — the "first-window"
+      // banner for scheduled mode needs them. windowSchedule.nextWindow
+      // is a pure derivation so the spec test for it covers the logic;
+      // here we only wire the data flow.
+      const fetched = await api.listWindows(serverId).catch(() => []);
+      windows = Array.isArray(fetched) ? fetched : [];
       form = {
         name: server.name,
         label: server.label,
@@ -88,6 +101,42 @@
       error = err instanceof Error ? err.message : String(err);
     }
   });
+
+  // Pure derivation: collapse fetched windows into the WindowSpec shape
+  // that nextWindow expects. Re-runs whenever `windows` or `form.timezone`
+  // changes, so editing the timezone field re-evaluates the banner with
+  // the new wall-clock reference without a remount.
+  let firstWindow = $derived(
+    nextWindow(
+      windows.map<WindowSpec>((w) => ({
+        days_of_week: w.days_of_week,
+        start_time: w.start_time,
+        stop_time: w.stop_time,
+        target_type: w.target_type,
+        enabled: w.enabled
+      })),
+      form.timezone || 'UTC',
+      new Date()
+    )
+  );
+
+  // Shared formatter: same Intl shape as ModePill so the banner copy
+  // and the mode pill read as one vocabulary across pages.
+  const fmts = new Map<string, Intl.DateTimeFormat>();
+  function fmtWhen(d: Date, tz: string): string {
+    let f = fmts.get(tz);
+    if (!f) {
+      f = new Intl.DateTimeFormat('en-US', {
+        timeZone: tz || 'UTC',
+        weekday: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      fmts.set(tz, f);
+    }
+    return f.format(d);
+  }
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
@@ -132,6 +181,58 @@
 
   {#if error}
     <Alert variant="destructive" class="mb-6">{error}</Alert>
+  {/if}
+
+  <!--
+    First-window banner — only renders when the operator has picked
+    `scheduled` mode. Heads up about the gap between "scheduled is
+    selected" and "a window is configured and live":
+
+      - no windows            → warning: a scheduled server with no
+                                windows never rescales; shortcut to the
+                                Windows tab.
+      - currently in a window → info: state change is happening; no edit
+                                needed.
+      - next window in future → info: this is when the first automatic
+                                rescale will fire.
+
+    The shortcut is always present (even when no windows exist) so
+    operators can reach the Windows tab in one click from any scheduled
+    edit.
+  -->
+  {#if form.mode === 'scheduled'}
+    <Alert
+      variant={firstWindow.kind === 'none' ? 'warning' : 'default'}
+      class="mb-6"
+    >
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0 flex-1 space-y-1">
+          {#if firstWindow.kind === 'none'}
+            <p class="text-sm text-foreground">
+              {m.server_edit_scheduled_no_windows()}
+            </p>
+          {:else if firstWindow.kind === 'in_window'}
+            <p class="text-sm text-foreground">
+              {m.server_edit_scheduled_in_window({
+                target: firstWindow.target,
+                until: fmtWhen(firstWindow.endsAt, form.timezone)
+              })}
+            </p>
+          {:else}
+            <p class="text-sm text-foreground">
+              {m.server_edit_scheduled_next_window({
+                when: fmtWhen(firstWindow.startsAt, form.timezone),
+                target: firstWindow.target
+              })}
+            </p>
+          {/if}
+        </div>
+        <Button variant="default" size="sm" href="/servers/{serverId}/windows">
+          <Calendar class="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+          {m.server_edit_scheduled_edit_windows()}
+        </Button>
+      </div>
+    </Alert>
   {/if}
 
   <form onsubmit={submit} class="space-y-4">
