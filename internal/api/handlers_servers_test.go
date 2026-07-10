@@ -333,6 +333,89 @@ func TestLiveServerState_SoftFailOnNilDepsAPIFor(t *testing.T) {
 	}
 }
 
+// TestGetServer_PrefersLocationOverDeprecatedDatacenter guards the
+// transition off Server.Datacenter (Hetzner is phasing out the
+// `datacenter` field in favour of the canonical `location`; see
+// https://docs.hetzner.cloud/changelog#2025-12-16-phasing-out-datacenters).
+// When a Server comes back with BOTH Location and Datacenter populated
+// we MUST read the canonical Location — otherwise the web's per-
+// location catalog gate silently stops working the moment Hetzner
+// stops populating Datacenter. Repro from 2026-07-10: user reported
+// /api/server-types?location=X never fired for /servers/{id}/edit;
+// root cause was liveServerState reading only the deprecated field.
+func TestGetServer_PrefersLocationOverDeprecatedDatacenter(t *testing.T) {
+	deps, _ := newTestDeps(t)
+	_, sid := seedServer(t, deps, "p1", "web-1")
+	stub := &fakeHetzner{
+		servers: []*hetzner.Server{
+			{
+				ID:         1,
+				Name:       "live-1",
+				Status:     hcloud.ServerStatusRunning,
+				ServerType: &hetzner.ServerType{Name: "cx42"},
+				// Both fields populated; intentionally different so the
+				// test can detect which one wins. The canonical field
+				// must win.
+				Location:   &hcloud.Location{Name: "fsn1"},
+				Datacenter: &hcloud.Datacenter{Location: &hcloud.Location{Name: "nbg1"}},
+			},
+		},
+	}
+	deps.APIFor = func(projectID int64) (hetzner.API, error) { return stub, nil }
+
+	h := NewRouter(deps)
+	req := authedRequest(t, "GET", "/api/servers/"+itoa(sid), nil)
+	rr := recorder(t, h, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d (body=%q)", rr.Code, rr.Body.String())
+	}
+	var got ServerResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Location != "fsn1" {
+		t.Fatalf("location: got %q want fsn1 (canonical Server.Location must win over deprecated Server.Datacenter)", got.Location)
+	}
+}
+
+// TestGetServer_LocationOnlyFromCanonicalField guards the post-deprecation
+// state: once Hetzner stops populating Server.Datacenter entirely (after
+// 1 July 2026), the canonical Server.Location is the ONLY source of
+// truth. liveServerState must read it; otherwise every server's location
+// will be silently empty and the per-location catalog gate on the
+// edit page will never fire.
+func TestGetServer_LocationOnlyFromCanonicalField(t *testing.T) {
+	deps, _ := newTestDeps(t)
+	_, sid := seedServer(t, deps, "p1", "web-1")
+	stub := &fakeHetzner{
+		servers: []*hetzner.Server{
+			{
+				ID:         1,
+				Name:       "live-1",
+				Status:     hcloud.ServerStatusRunning,
+				ServerType: &hetzner.ServerType{Name: "cx42"},
+				Location:   &hcloud.Location{Name: "hel1"},
+				Datacenter: nil, // post-deprecation shape
+			},
+		},
+	}
+	deps.APIFor = func(projectID int64) (hetzner.API, error) { return stub, nil }
+
+	h := NewRouter(deps)
+	req := authedRequest(t, "GET", "/api/servers/"+itoa(sid), nil)
+	rr := recorder(t, h, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d (body=%q)", rr.Code, rr.Body.String())
+	}
+	var got ServerResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Location != "hel1" {
+		t.Fatalf("location: got %q want hel1 (must read Server.Location when Server.Datacenter is nil)", got.Location)
+	}
+}
+
 func TestGetServer_IncludesPendingEvent(t *testing.T) {
 	deps, _ := newTestDeps(t)
 	_, sid := seedServer(t, deps, "p1", "web-1")

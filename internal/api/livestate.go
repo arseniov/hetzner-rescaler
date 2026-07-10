@@ -52,7 +52,16 @@ func (d Deps) liveServerState(ctx context.Context, srv *store.Server) LiveServer
 	if hs.ServerType != nil {
 		out.CurrentType = hs.ServerType.Name
 	}
-	if hs.Datacenter != nil && hs.Datacenter.Location != nil {
+	// Hetzner is phasing out Server.Datacenter in favour of Server.Location
+	// as the canonical "where is this server" field. See
+	// https://docs.hetzner.cloud/changelog#2025-12-16-phasing-out-datacenters
+	// — Datacenter removal is scheduled after 1 July 2026. For the
+	// transitional window both fields may be populated; after 1 July
+	// only Location is. We read both, with Location winning because
+	// that's the field Hetzner intends to keep populated.
+	if hs.Location != nil {
+		out.Location = hs.Location.Name
+	} else if hs.Datacenter != nil && hs.Datacenter.Location != nil {
 		out.Location = hs.Datacenter.Location.Name
 	}
 	return out

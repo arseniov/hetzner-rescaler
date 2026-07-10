@@ -32,21 +32,48 @@
 
   let serverId = $derived(Number($page.params.id));
 
+  // Default location for the catalog load. Used when /api/servers/[id]
+  // doesn't return a `location` field — which DOES happen for any
+  // server where Hetzner's GetServer call soft-fails (token problems,
+  // the server was deleted out-of-band, Datacenter is nil in the Hetzner
+  // response). In that case `liveServerState` returns the zero-value
+  // LiveServerState and the JSON tag omitempty drops the field, so
+  // `server.location` is undefined on the wire. Confirmed 2026-07-10
+  // by inspecting a real API payload:
+  //   {"id":2,"project_id":2,"hcloud_server_id":139131129,
+  //    "name":"fiutaspesa-app",..., "status":"running",
+  //    "current_type":"cx33","created_at":"...", "updated_at":"..."}
+  // — note the missing `location` key. Without this default, the
+  // /api/server-types?location=X call NEVER fires for such servers.
+  // `fsn1` matches the hardcoded default used by the project page's
+  // register-server dialog (see projects/[id]/+page.svelte).
+  const FALLBACK_LOCATION = 'fsn1';
+
   onMount(async () => {
+    // Fire the per-location catalog load IMMEDIATELY on mount, BEFORE
+    // awaiting the server. This guarantees the network request goes
+    // out on every navigation to /servers/[id]/edit — which is the
+    // contract the type-availability gate relies on. The store's
+    // in-flight map dedupes overlapping calls; the per-location TTL
+    // cache keeps repeat visits cheap.
+    serverTypes.load(FALLBACK_LOCATION).catch(() => {
+      /* loadError is set on the store */
+    });
+
     try {
       server = await api.getServer(serverId);
-      // Fire the per-location catalog load AS SOON AS the server is
-      // known. This is a deliberate belt-and-braces trigger alongside
-      // the $effect inside ServerTypeSelect / ServerTypeMultiSelect:
-      // those effects already watch `location={server?.location}` and
-      // re-fire when the prop flips from undefined → "fsn1", but
-      // emitting the load here guarantees the network call happens on
-      // every navigation to the edit page, independent of any subtle
-      // Svelte 5 prop-tracking quirk during SSR hydration. The store
-      // dedupes overlapping calls via its in-flight map and the TTL
-      // cache keeps repeat visits cheap.
-      if (server.location) {
-        serverTypes.load(server.location).catch(() => { /* loadError is set on the store */ });
+      // If the server resolves with a real location (the typical case),
+      // refire the load with it. Store-level dedup means a back-to-back
+      // load for the SAME location returns the cached result with no
+      // extra network call; a different location triggers a fresh
+      // fetch that's also cached for 5min. The dropdown is already
+      // showing types from FALLBACK_LOCATION so it has something to
+      // render immediately; the refire upgrades it to per-location
+      // availability as soon as the server data arrives.
+      if (server.location && server.location !== FALLBACK_LOCATION) {
+        serverTypes.load(server.location).catch(() => {
+          /* loadError is set on the store */
+        });
       }
       form = {
         name: server.name,
