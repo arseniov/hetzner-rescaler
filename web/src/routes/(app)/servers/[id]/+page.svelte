@@ -240,15 +240,27 @@
     >
       {#snippet children(tab)}
         {#if tab === 'overview'}
-          {@const upDisabledReason = s.mode === 'manual' ? null : (s.mode === 'auto_promote' ? m.mode_pill_button_disabled_autopromote() : m.mode_pill_button_disabled_scheduled())}
           <!--
             Overview: three stacked panels —
               1. Current state (live Hetzner snapshot)
               2. Definition list + action buttons
               3. Compact recent events list (clicking jumps to Events)
 
-            Promote/demote only render for auto_promote mode; for other
-            modes the rescale pair is sufficient.
+            The action buttons are MODE-AWARE: each mode exposes the
+            affordance that actually does something in that mode.
+              - manual:       direct rescale up/down to configured base/top.
+              - auto_promote: request promote/demote; the engine moves the
+                              server at the next tick. Rescale up/down
+                              are NOT a valid affordance under auto-promote
+                              (they wouldn't carry the auto-promote
+                              semantics), so they're hidden rather than
+                              disabled-with-a-tooltip.
+              - scheduled:    windows drive rescales. There is no
+                              on-demand affordance here — edit windows
+                              to change behaviour.
+            This avoids "disabled buttons with tooltips" which is
+            visual noise and forces operators to read why each button
+            is grey before they can place the cursor.
           -->
 
           <!-- Current state panel. Shows the live Hetzner-reported
@@ -313,29 +325,28 @@
             </dl>
 
             <div class="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={busy !== null || isRescaling || upDisabledReason !== null}
-                title={upDisabledReason ?? undefined}
-                onclick={() => askRescale('up')}
-              >
-                <ArrowUp class="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-                {busy === 'up' ? '…' : m.server_detail_rescale_up()}
-              </Button>
-              <Button
-                variant="default"
-                size="sm"
-                disabled={busy !== null || isRescaling || upDisabledReason !== null}
-                title={upDisabledReason ?? undefined}
-                onclick={() => askRescale('down')}
-              >
-                <ArrowDown class="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-                {busy === 'down' ? '…' : m.server_detail_rescale_down()}
-              </Button>
-              {#if s.mode === 'auto_promote'}
+              {#if s.mode === 'manual'}
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={busy !== null || isRescaling}
+                  onclick={() => askRescale('up')}
+                >
+                  <ArrowUp class="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                  {busy === 'up' ? '…' : m.server_detail_rescale_up()}
+                </Button>
                 <Button
                   variant="default"
+                  size="sm"
+                  disabled={busy !== null || isRescaling}
+                  onclick={() => askRescale('down')}
+                >
+                  <ArrowDown class="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                  {busy === 'down' ? '…' : m.server_detail_rescale_down()}
+                </Button>
+              {:else if s.mode === 'auto_promote'}
+                <Button
+                  variant="primary"
                   size="sm"
                   disabled={busy !== null || isRescaling}
                   onclick={promote}
@@ -352,6 +363,16 @@
                   <ChevronsDown class="size-3.5" strokeWidth={1.75} aria-hidden="true" />
                   {busy === 'demote' ? '…' : m.server_detail_demote()}
                 </Button>
+              {:else}
+                <!--
+                  Scheduled mode: windows drive rescales. There is no
+                  on-demand rescale affordance here, so the buttons row
+                  shows a quiet caption and the only action — Edit
+                  windows — stays visible but icon-only.
+                -->
+                <span class="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                  {m.server_detail_scheduled_caption()}
+                </span>
               {/if}
               <!-- Icon-only "Edit windows" button. The label lives in
                    aria-label so screen readers still get the full

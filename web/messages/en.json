@@ -83,6 +83,7 @@
   "server_detail_rescale_down": "Rescale down",
   "server_detail_promote": "Request promote",
   "server_detail_demote": "Request demote",
+  "server_detail_scheduled_caption": "Windows drive rescaling.",
   "server_detail_edit_windows": "Edit windows",
   "server_detail_recent_events": "Recent events",
   "server_detail_events_empty": "No events yet.",
