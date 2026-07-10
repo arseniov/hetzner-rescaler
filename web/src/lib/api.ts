@@ -11,6 +11,14 @@ function getInternalToken(): string | undefined {
   return (env.PUBLIC_INTERNAL_TOKEN ?? import.meta.env.PUBLIC_INTERNAL_TOKEN) as string | undefined;
 }
 
+type ApiLogLevel = 'debug' | 'info' | 'silent';
+
+function getApiLogLevel(): ApiLogLevel {
+  const raw = (env.PUBLIC_LOG_LEVEL ?? import.meta.env.PUBLIC_LOG_LEVEL) as string | undefined;
+  if (raw === 'debug' || raw === 'info') return raw;
+  return 'silent';
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
@@ -31,7 +39,22 @@ export async function apiFetch<T = unknown>(
     headers.set('Content-Type', 'application/json');
   }
 
+  const logLevel = getApiLogLevel();
+  const method = init.method ?? 'GET';
+  if (logLevel === 'debug') {
+    console.debug('[api] request', { method, path });
+  }
+  const startedAt = Date.now();
   const resp = await fetch(path, { ...init, headers, credentials: 'omit' });
+  if (logLevel === 'debug' || logLevel === 'info') {
+    console.info('[api] response', {
+      method,
+      path,
+      status: resp.status,
+      ok: resp.ok,
+      duration_ms: Date.now() - startedAt
+    });
+  }
 
   if (!resp.ok) {
     let msg = `${resp.status} ${resp.statusText}`;

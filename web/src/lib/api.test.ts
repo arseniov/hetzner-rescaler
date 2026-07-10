@@ -51,6 +51,49 @@ describe('apiFetch', () => {
     const result = await apiFetch('/api/projects');
     expect(result).toEqual([{ id: 1, name: 'p' }]);
   });
+
+  it('logs request and response details at debug level', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 })
+    ));
+    vi.stubEnv('PUBLIC_LOG_LEVEL', 'debug');
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+
+    await apiFetch('/api/projects', { method: 'POST', body: JSON.stringify({ name: 'p' }) });
+
+    expect(debugSpy).toHaveBeenCalledWith('[api] request', {
+      method: 'POST',
+      path: '/api/projects'
+    });
+    expect(infoSpy).toHaveBeenCalledWith('[api] response', expect.objectContaining({
+      method: 'POST',
+      path: '/api/projects',
+      status: 200,
+      ok: true,
+      duration_ms: expect.any(Number)
+    }));
+  });
+
+  it('logs response details at info level without debug request logs', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 201 })
+    ));
+    vi.stubEnv('PUBLIC_LOG_LEVEL', 'info');
+    const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+
+    await apiFetch('/api/projects', { method: 'POST', body: JSON.stringify({ name: 'p' }) });
+
+    expect(debugSpy).not.toHaveBeenCalled();
+    expect(infoSpy).toHaveBeenCalledWith('[api] response', expect.objectContaining({
+      method: 'POST',
+      path: '/api/projects',
+      status: 201,
+      ok: true,
+      duration_ms: expect.any(Number)
+    }));
+  });
 });
 
 describe('api.serverTypes', () => {
