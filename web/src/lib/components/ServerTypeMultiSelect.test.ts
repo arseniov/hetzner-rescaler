@@ -95,6 +95,40 @@ describe('ServerTypeMultiSelect', () => {
     expect(trigger.getAttribute('id')).toBe('multisel');
   });
 
+  it('renders the Unavailable badge for unavailable addable types', async () => {
+    // The multi-select now uses the shared ServerTypeOption row, which
+    // renders the Unavailable badge on the far right when type.available
+    // is false. With value=[] the typeOverrides() entries (incl. cx33
+    // with available=false) are all addable, so the badge must appear.
+    serverTypes._reset();
+    serverTypes._setTypesForTest([
+      { name: 'cpx11', available: true, cores: 2, memory_gb: 2 },
+      { name: 'cpx21', available: true, cores: 3, memory_gb: 4 },
+      { name: 'cx33',  available: false, cores: 8, memory_gb: 16 },
+    ]);
+    render(ServerTypeMultiSelect, {
+      props: { value: [], server: baseServer, open: true },
+    });
+    await tick();
+    expect(document.body.textContent).toMatch(/Unavailable/);
+  });
+
+  it('does NOT render the Unavailable badge when all addable types are available', async () => {
+    // Defensive companion: when every addable type has available=true,
+    // the Unavailable badge must NOT appear. Prevents a regression
+    // where the badge condition flips to always-true.
+    serverTypes._reset();
+    serverTypes._setTypesForTest([
+      { name: 'cpx11', available: true, cores: 2, memory_gb: 2 },
+      { name: 'cpx21', available: true, cores: 3, memory_gb: 4 },
+    ]);
+    render(ServerTypeMultiSelect, {
+      props: { value: [], server: baseServer, open: true },
+    });
+    await tick();
+    expect(document.body.textContent).not.toMatch(/Unavailable/);
+  });
+
   it('passes the server prop to role-chip classification', () => {
     // Verify the bits-ui trigger renders with the same id-prop pattern
     // as ServerTypeSelect — same component family, same trigger.

@@ -6,7 +6,7 @@
   import { m } from '$lib/paraglide/messages.js';
   import type { Server, ServerType } from '$lib/types';
   import { cn, SELECT_TRIGGER_CLASSES } from '$lib/utils';
-  import { roleFor, type ServerTypeRole } from '$lib/utils/serverTypeRoles';
+  import ServerTypeOption from './ServerTypeOption.svelte';
 
   /**
    * ServerTypeMultiSelect — drag-drop multiselect for the fallback
@@ -47,6 +47,13 @@
     class?: string;
     ariaLabel?: string;
     emptyLabel?: string;
+    /**
+     * Whether the add dropdown is open. Bound from the parent so tests
+     * can pre-mount the dropdown contents without simulating a click.
+     * Has no effect on user-facing behavior — the trigger toggles this
+     * transparently. Mirrors ServerTypeSelect's pattern.
+     */
+    open?: boolean;
   };
   let {
     value = $bindable(),
@@ -57,7 +64,8 @@
     disabled = false,
     class: className = '',
     ariaLabel,
-    emptyLabel = m.server_type_multiselect_empty()
+    emptyLabel = m.server_type_multiselect_empty(),
+    open = $bindable(false)
   }: Props = $props();
 
   // Load the catalog whenever `location` becomes a non-empty string.
@@ -116,40 +124,6 @@
   // placeholder for the next pick.
   let pickerValue = $state('');
 
-  // Role classification: reuse the pure helper so the multi-select
-  // shows identical chips to ServerTypeSelect.
-  const ROLE_FOR = roleFor;
-
-  function chipClass(role: ServerTypeRole): string {
-    if (role === 'current') {
-      return 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300';
-    }
-    return 'border-border bg-muted text-muted-foreground';
-  }
-
-  function chipLabel(role: ServerTypeRole): string {
-    switch (role) {
-      case 'current':  return m.server_type_role_current();
-      case 'base':     return m.server_type_role_base();
-      case 'top':      return m.server_type_role_top();
-      case 'fallback': return m.server_type_role_fallback();
-    }
-  }
-
-  function describe(t: ServerType): string {
-    const bits: string[] = [];
-    if (typeof t.cores === 'number' && typeof t.memory_gb === 'number') {
-      bits.push(`${t.cores} cores · ${t.memory_gb} GB`);
-    } else if (typeof t.cores === 'number') {
-      bits.push(`${t.cores} cores`);
-    }
-    if (typeof t.price_monthly_eur === 'number' && t.price_monthly_eur > 0) {
-      bits.push(`€${t.price_monthly_eur.toFixed(2)}/mo`);
-    }
-    if (t.description) bits.push(t.description);
-    return bits.length > 0 ? bits.join(' · ') : t.name;
-  }
-
   const flipDurationMs = 120;
 </script>
 
@@ -202,6 +176,7 @@
         if (v) addFromDropdown(v);
       }
     }
+    bind:open
     {disabled}
   >
     <Select.Trigger
@@ -228,24 +203,13 @@
             </p>
           {:else}
             {#each addableOptions as t (t.name)}
-              {@const role = ROLE_FOR(t, server)}
+              {@const describeLabel = `${t.name}${typeof t.cores === 'number' && typeof t.memory_gb === 'number' ? ` · ${t.cores} cores · ${t.memory_gb} GB` : ''}`}
               <Select.Item
                 value={t.name}
-                label={`${t.name} · ${describe(t)}`}
+                label={describeLabel}
                 class="flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm data-[highlighted]:bg-muted data-[state=checked]:bg-muted/60"
               >
-                {#if role}
-                  <span
-                    class={cn(
-                      'inline-flex shrink-0 items-center rounded-sm border px-1 py-0.5 font-mono text-[9px] uppercase tracking-wider',
-                      chipClass(role)
-                    )}
-                  >
-                    {chipLabel(role)}
-                  </span>
-                {/if}
-                <span class="font-mono">{t.name}</span>
-                <span class="text-xs text-muted-foreground">· {describe(t)}</span>
+                <ServerTypeOption type={t} {server} />
               </Select.Item>
             {/each}
           {/if}
